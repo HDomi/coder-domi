@@ -1,0 +1,22 @@
+{
+  "name": "discord-coder-domi-agent",
+  "version": "1.0.0",
+  "description": "Discord ChatOps AI Coding Agent running on Qwen2.5-Coder",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
+    "better-sqlite3": "^11.8.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.24",
+    "@types/better-sqlite3": "^7.6.9"
+  }
+}

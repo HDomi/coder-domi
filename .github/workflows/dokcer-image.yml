@@ -1,0 +1,78 @@
+name: Deploy to Linux Server
+
+on:
+  push:
+    branches: ["main"]
+
+env:
+  APP_NAME: corder-domi
+  APP_DIR: /opt/docker/corder-domi
+  APP_PORT: 5533
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 🔑 SSH 키 설정
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+          ssh-keyscan -T 5 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts || true
+
+      - name: Check SSH key
+        run: |
+          ls -l ~/.ssh
+          head -n 3 ~/.ssh/id_rsa
+
+      - name: Test SSH
+        run: |
+          ssh -i ~/.ssh/id_rsa \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=no \
+            -p ${{ secrets.SERVER_PORT }} \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} \
+            "whoami; hostname"
+
+      # 🚀 서버 배포
+      - name: Deploy
+        run: |
+          ssh -i ~/.ssh/id_rsa -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+            -p ${{ secrets.SERVER_PORT }} \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} <<EOF
+
+          set -e
+
+          # /opt/docker 디렉토리 생성
+          sudo mkdir -p "$APP_DIR"
+          sudo chown deploy:deploy "$APP_DIR"
+          cd "$APP_DIR"
+
+          if [ ! -d ".git" ]; then
+            git clone https://github.com/HDomi/coder-domi.git .
+          else
+            git pull origin main
+          fi
+
+          # Docker 컨테이너 배포
+          sudo docker stop "$APP_NAME" || true
+          sudo docker rm "$APP_NAME" || true
+
+          sudo docker build -t "$APP_NAME:latest" .
+
+          docker run -d \
+            --restart unless-stopped \
+            --name "$APP_NAME" \
+            -p "$APP_PORT:$APP_PORT" \
+            -e DISCORD_TOKEN='${{ secrets.DISCORD_TOKEN }}' \
+            -e CLIENT_ID='${{ secrets.CLIENT_ID }}' \
+            -e AI_API_URL='${{ secrets.AI_API_URL }}' \
+            "$APP_NAME:latest"
+
+          EOF

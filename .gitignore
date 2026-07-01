@@ -1,0 +1,6 @@
+node_modules
+.env
+.env.development
+.DS_Store
+dist/
+chatops.db

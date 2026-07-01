@@ -2,9 +2,9 @@ import { Client, GatewayIntentBits, Interaction, SlashCommandBuilder, REST, Rout
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
 import { dbManager } from './db';
 import { generateCodeUpdate } from './ollama';
+import { setupAndPushRepo } from './git';
 
 dotenv.config();
 
@@ -25,7 +25,12 @@ if (!fs.existsSync(WORKSPACE_DIR)) {
 const commands = [
   new SlashCommandBuilder()
     .setName('연결')
-    .setDescription(`이 채널을 [${WORKSPACE_DIR}] 파이프라인 전용 실시간 개발 세션방으로 연결합니다.`),
+    .setDescription('이 채널을 특정 애플리케이션의 개발 세션방으로 연결합니다.')
+    .addStringOption(option =>
+      option.setName('앱이름')
+        .setDescription('생성하거나 연결할 애플리케이션 이름 (영어/숫자/대시만 가능)')
+        .setRequired(true)
+    ),
   new SlashCommandBuilder()
     .setName('기획')
     .setDescription('프로젝트 기획 요구사항을 추가합니다.')
@@ -41,7 +46,10 @@ const commands = [
       option.setName('파일명')
         .setDescription('대상 소스 파일 경로 (예: src/views/MainView.vue)')
         .setRequired(true)
-    )
+    ),
+  new SlashCommandBuilder()
+    .setName('적용')
+    .setDescription('현재 프로젝트의 변경 코드를 GitHub 원격 레포지토리에 반영(Push)합니다.')
 ].map(command => command.toJSON());
 
 client.once('ready', async (readyClient) => {
@@ -74,14 +82,29 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 
   // [명령어 1] 해당 채팅방을 가상 개발 세션으로 연결
   if (commandName === '연결') {
-    dbManager.saveSession(channelId, WORKSPACE_DIR, '');
-    return interaction.reply(`✅ 이 채널을 [${WORKSPACE_DIR}] 파이프라인 전용 실시간 개발 세션방으로 연결했습니다.`);
+    const appName = interaction.options.getString('앱이름', true).trim();
+    
+    // 영어, 숫자, 대시(-) 문자만 포함하도록 방어적 이름 체크
+    if (!/^[a-zA-Z0-9-_]+$/.test(appName)) {
+      return interaction.reply({
+        content: '❌ 앱 이름은 영문, 숫자, 대시(-), 언더바(_)만 사용할 수 있습니다.',
+        ephemeral: true
+      });
+    }
+
+    const projectPath = path.join(WORKSPACE_DIR, appName);
+    if (!fs.existsSync(projectPath)) {
+      fs.mkdirSync(projectPath, { recursive: true });
+    }
+
+    dbManager.saveSession(channelId, projectPath, '', appName);
+    return interaction.reply(`✅ 이 채널을 [${appName}] 프로젝트 전용 실시간 개발 세션방으로 연결했습니다.\n경로: \`${projectPath}\``);
   }
 
   const session = dbManager.getSession(channelId);
   if (!session) {
     return interaction.reply({
-      content: '❌ 활성화된 개발 세션이 없습니다. 먼저 `/연결` 명령어로 채널을 연결해 주세요.',
+      content: '❌ 활성화된 개발 세션이 없습니다. 먼저 `/연결 [앱이름]` 명령어로 채널을 연결해 주세요.',
       ephemeral: true
     });
   }
@@ -95,22 +118,29 @@ client.on('interactionCreate', async (interaction: Interaction) => {
       ? `${session.spec_summary}\n- ${newSpec}`
       : `- ${newSpec}`;
 
-    dbManager.saveSession(channelId, session.project_path, updatedSpec);
+    dbManager.saveSession(channelId, session.project_path, updatedSpec, session.app_name);
 
     // 트랙 A: 파일 시스템(SPEC.md) 실시간 생성 및 동기화 박제
-    const specFilePath = path.join(WORKSPACE_DIR, 'SPEC.md');
+    const specFilePath = path.join(session.project_path, 'SPEC.md');
     fs.writeFileSync(specFilePath, updatedSpec, 'utf-8');
 
     return interaction.reply(`📝 기획 명세가 추가되었습니다. 전체 기획 아카이브는 프로젝트 내부 SPEC.md 파일에 영구 릴리즈됩니다.`);
   }
 
-  // [명령어 3] qwen2.5-coder 두뇌 가동 -> 파일 변조 -> Git Push 통합 파이프라인 트리거
+  // [명령어 3] qwen2.5-coder 두뇌 가동 -> 파일 변조 (로컬 저장만 처리)
   if (commandName === '코딩') {
     const fileName = interaction.options.getString('파일명', true).trim();
-    const filePath = path.join(WORKSPACE_DIR, fileName);
+    const filePath = path.join(session.project_path, fileName);
 
+    // 디렉토리가 존재하지 않는다면 파일 생성도 지원할 수 있도록, 폴더가 없으면 미리 만듬
+    const fileDir = path.dirname(filePath);
+    if (!fs.existsSync(fileDir)) {
+      fs.mkdirSync(fileDir, { recursive: true });
+    }
+
+    // 파일이 없으면 빈 파일 생성 (사용자가 신규 파일 코딩 요청도 할 수 있으므로)
     if (!fs.existsSync(filePath)) {
-      return interaction.reply(`❌ 워크스페이스 하위에 [${fileName}] 파일이 감지되지 않습니다. Git Pull 상태를 체크하거나 경로를 확인하세요.`);
+      fs.writeFileSync(filePath, '', 'utf-8');
     }
 
     if (!session.spec_summary) {
@@ -130,19 +160,7 @@ client.on('interactionCreate', async (interaction: Interaction) => {
       // 3. 파일 오버라이트 (수정 완료)
       fs.writeFileSync(filePath, updatedCode, 'utf-8');
       
-      // 4. Git 셸 실행 디렉토리 스위칭
-      process.chdir(WORKSPACE_DIR);
-      
-      // 5. Git Diff 트래킹 후 안전한 원격 push
-      const hasChanges = execSync('git status --porcelain', { encoding: 'utf-8' }).trim();
-      if (hasChanges) {
-        execSync('git add .');
-        execSync(`git commit -m "ChatOps: 디스코드 세션 기반 AI 자동 코드 반영 및 동기화"`);
-        execSync('git push origin main');
-        await interaction.editReply('🚀 AI 코드 인젝션 및 GitHub Actions 원격 Push 완료! 배포 파이프라인이 정상적으로 트리거되었습니다.');
-      } else {
-        await interaction.editReply('ℹ️ 변경 분석 결과 기존 소스 코드와 완전히 동일하여 무의미한 Push를 생략했습니다.');
-      }
+      await interaction.editReply(`✅ [${fileName}] 파일에 AI 코드 인젝션 완료!\n수정된 내용이 로컬 워크스페이스에 저장되었습니다. GitHub 원격 레포지토리에 커밋 및 반영하려면 \`/적용\` 명령을 입력해 주세요.`);
 
     } catch (error: any) {
       console.error(error);
@@ -151,6 +169,27 @@ client.on('interactionCreate', async (interaction: Interaction) => {
       } else {
         await interaction.reply(`❌ ChatOps 자동화 파이프라인 중단 에러: ${error.message}`);
       }
+    }
+  }
+
+  // [명령어 4] GitHub 원격 자동 생성 및 푸시 파이프라인
+  if (commandName === '적용') {
+    const gitToken = process.env.GIT_TOKEN;
+    if (!gitToken) {
+      return interaction.reply({
+        content: '❌ 서버 `.env` 파일에 `GIT_TOKEN` 설정이 누락되었습니다. GitHub Personal Access Token을 설정해 주세요.',
+        ephemeral: true
+      });
+    }
+
+    await interaction.deferReply();
+
+    try {
+      const repoUrl = await setupAndPushRepo(session.project_path, session.app_name, gitToken);
+      await interaction.editReply(`🚀 GitHub 레포지토리 배포 완료!\n원격 저장소 주소: ${repoUrl}`);
+    } catch (error: any) {
+      console.error(error);
+      await interaction.editReply(`❌ GitHub 동기화 적용 실패: ${error.message}`);
     }
   }
 });

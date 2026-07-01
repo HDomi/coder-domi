@@ -15,10 +15,18 @@ db.exec(`
   )
 `);
 
+// 마이그레이션: app_name 컬럼 추가 (존재하지 않을 때만)
+try {
+  db.exec(`ALTER TABLE project_sessions ADD COLUMN app_name TEXT`);
+} catch (e) {
+  // 이미 컬럼이 존재하는 경우 예외 처리 무시
+}
+
 export interface Session {
   channel_id: string;
   project_path: string;
   spec_summary: string;
+  app_name: string;
 }
 
 export const dbManager = {
@@ -29,15 +37,16 @@ export const dbManager = {
   },
 
   // 영구 한계 없는 기획 명세서 컨텍스트 업데이트 및 저장
-  saveSession(channelId: string, projectPath: string, specSummary: string) {
+  saveSession(channelId: string, projectPath: string, specSummary: string, appName: string) {
     const stmt = db.prepare(`
-      INSERT INTO project_sessions (channel_id, project_path, spec_summary, last_updated)
-      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO project_sessions (channel_id, project_path, spec_summary, app_name, last_updated)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(channel_id) DO UPDATE SET
         project_path = excluded.project_path,
         spec_summary = excluded.spec_summary,
+        app_name = excluded.app_name,
         last_updated = CURRENT_TIMESTAMP
     `);
-    stmt.run(channelId, projectPath, specSummary);
+    stmt.run(channelId, projectPath, specSummary, appName);
   }
 };

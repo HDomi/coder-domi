@@ -44,42 +44,51 @@ ${userRequest}
 위 기획서와 워크스페이스 상태를 분석하고, 사용자의 코딩 요청을 완벽하게 반영한 파일 변경사항(JSON)을 생성해라.
 `;
 
-  const response = await fetch(`${cleanUrl}/api/chat`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'qwen2.5-coder:14b',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      format: 'json', // JSON 출력 강제
-      options: {
-        temperature: 0.1 // 코딩의 결정론적 정밀성을 위해 온도를 극도로 낮춤
+  // Ollama가 무한 루프에 빠지거나 멈추는 것을 방지하기 위해 90초 타임아웃 설정
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90000);
+
+  try {
+    const response = await fetch(`${cleanUrl}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
       },
-      stream: false
-    })
-  });
+      body: JSON.stringify({
+        model: 'qwen2.5-coder:14b',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        format: 'json',
+        options: {
+          temperature: 0.1
+        },
+        stream: false
+      }),
+      signal: controller.signal
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Ollama API 호출 실패: ${response.statusText} (${errorText})`);
-  }
-
-  const json = await response.json() as any;
-  if (json.message && json.message.content) {
-    try {
-      const parsed = JSON.parse(json.message.content.trim());
-      if (parsed && Array.isArray(parsed.changes)) {
-        return parsed.changes as FileChange[];
-      }
-      throw new Error("JSON 응답 내 'changes' 배열을 찾을 수 없습니다.");
-    } catch (e: any) {
-      throw new Error(`Ollama 응답 파싱 에러: ${e.message}\n원본 내용: ${json.message.content}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Ollama API 호출 실패: ${response.statusText} (${errorText})`);
     }
-  } else {
-    throw new Error('Ollama로부터 빈 응답을 받았습니다.');
+
+    const json = await response.json() as any;
+    if (json.message && json.message.content) {
+      try {
+        const parsed = JSON.parse(json.message.content.trim());
+        if (parsed && Array.isArray(parsed.changes)) {
+          return parsed.changes as FileChange[];
+        }
+        throw new Error("JSON 응답 내 'changes' 배열을 찾을 수 없습니다.");
+      } catch (e: any) {
+        throw new Error(`Ollama 응답 파싱 에러: ${e.message}\n원본 내용: ${json.message.content}`);
+      }
+    } else {
+      throw new Error('Ollama로부터 빈 응답을 받았습니다.');
+    }
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

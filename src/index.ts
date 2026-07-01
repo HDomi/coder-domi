@@ -15,30 +15,56 @@ const client = new Client({
 });
 
 // 미니 PC 인프라 내에서 대상 타겟 코드가 동기화되어 움직일 워크스페이스 정의
-const WORKSPACE_DIR = path.resolve(process.env.HOME || '', 'discord-coder-domi/workspace');
+const WORKSPACE_DIR = path.resolve(process.env.HOME || '', 'discord-corder-domi/workspace');
 
 if (!fs.existsSync(WORKSPACE_DIR)) {
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 }
 
 // 워크스페이스 내부의 텍스트 기반 소스 파일들을 재귀적으로 수집하여 컨텍스트화
+const IGNORED_NAMES = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  'out',
+  '.output',
+  '.nuxt',
+  '.next',
+  '.svelte-kit',
+  '.cache',
+  'cache',
+  '.DS_Store',
+  'package-lock.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+  'chatops.db'
+]);
+
 function getWorkspaceContext(projectPath: string): { files: { path: string; content: string }[] } {
   const result: { files: { path: string; content: string }[] } = { files: [] };
+  let fileCount = 0;
   
   function traverse(currentDir: string) {
     if (!fs.existsSync(currentDir)) return;
     const list = fs.readdirSync(currentDir);
     for (const item of list) {
-      if (item === '.git' || item === 'node_modules' || item === 'dist' || item === '.DS_Store') continue;
+      if (IGNORED_NAMES.has(item)) continue;
+      
       const fullPath = path.join(currentDir, item);
       const stat = fs.statSync(fullPath);
+      
       if (stat.isDirectory()) {
         traverse(fullPath);
       } else if (stat.isFile()) {
+        // 보안/VRAM 초과 방지: 200KB를 넘는 대형 파일 또는 파일 한계(150개)를 넘어가면 건너뜀
+        if (stat.size > 204800 || fileCount >= 150) continue;
+        
         const relativePath = path.relative(projectPath, fullPath);
         try {
           const content = fs.readFileSync(fullPath, 'utf-8');
           result.files.push({ path: relativePath, content });
+          fileCount++;
         } catch (e) {
           // 바이너리 파일이나 읽을 수 없는 파일은 무시
         }
@@ -82,7 +108,7 @@ const commands = [
 ].map(command => command.toJSON());
 
 client.once('ready', async (readyClient) => {
-  console.log(`🚀 Coder-Domi ChatOps 에이전트 가동 상태 정상: ${readyClient.user?.tag}`);
+  console.log(`🚀 Corder-Domi ChatOps 에이전트 가동 상태 정상: ${readyClient.user?.tag}`);
 
   const token = process.env.DISCORD_TOKEN;
   const clientId = process.env.CLIENT_ID;

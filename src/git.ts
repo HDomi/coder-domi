@@ -16,7 +16,7 @@ export async function setupAndPushRepo(
     headers: {
       'Authorization': `Bearer ${gitToken}`,
       'Accept': 'application/vnd.github+json',
-      'User-Agent': 'coder-domi-bot',
+      'User-Agent': 'corder-domi-bot',
       'X-GitHub-Api-Version': '2022-11-28'
     }
   });
@@ -35,7 +35,7 @@ export async function setupAndPushRepo(
     headers: {
       'Authorization': `Bearer ${gitToken}`,
       'Accept': 'application/vnd.github+json',
-      'User-Agent': 'coder-domi-bot',
+      'User-Agent': 'corder-domi-bot',
       'X-GitHub-Api-Version': '2022-11-28'
     }
   });
@@ -49,7 +49,7 @@ export async function setupAndPushRepo(
         'Authorization': `Bearer ${gitToken}`,
         'Content-Type': 'application/json',
         'Accept': 'application/vnd.github+json',
-        'User-Agent': 'coder-domi-bot',
+        'User-Agent': 'corder-domi-bot',
         'X-GitHub-Api-Version': '2022-11-28'
       },
       body: JSON.stringify({

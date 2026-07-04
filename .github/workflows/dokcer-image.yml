@@ -64,6 +64,15 @@ jobs:
           sudo docker stop "$APP_NAME" || true
           sudo docker rm "$APP_NAME" || true
 
+          # chatops.db가 디렉토리로 잘못 생성되어 있는 경우 대비 및 빈 파일 자동 생성
+          if [ -d "$APP_DIR/chatops.db" ]; then
+            sudo rm -rf "$APP_DIR/chatops.db"
+          fi
+          if [ ! -f "$APP_DIR/chatops.db" ]; then
+            touch "$APP_DIR/chatops.db"
+            chmod 666 "$APP_DIR/chatops.db"
+          fi
+
           sudo docker build -t "$APP_NAME:latest" .
 
           docker run -d \

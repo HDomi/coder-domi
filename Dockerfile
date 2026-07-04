@@ -9,6 +9,10 @@ RUN apk add --no-cache \
     make \
     g++
 
+# Git 전역 사용자 설정
+RUN git config --global user.email "hwangjae1139@gmail.com" && \
+    git config --global user.name "CORDER_DOMI"
+
 # 작업 디렉토리를 설정합니다.
 WORKDIR /usr/src/app
 

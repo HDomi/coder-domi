@@ -1,9 +1,10 @@
 # Node.js의 공식 이미지를 기반으로 합니다.
 FROM node:20-alpine
 
-# FFmpeg 및 필요한 패키지 설치 (Alpine Linux - better-sqlite3 빌드용 빌드 도구 포함)
+# FFmpeg, Git 및 필요한 패키지 설치 (Alpine Linux - better-sqlite3 빌드용 빌드 도구 포함)
 RUN apk add --no-cache \
     ffmpeg \
+    git \
     python3 \
     make \
     g++

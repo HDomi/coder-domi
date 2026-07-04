@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { dbManager } from './db';
 import { generateCodeUpdate } from './ollama';
-import { setupAndPushRepo } from './git';
+import { setupAndPushRepo, deleteRemoteRepo } from './git';
 
 dotenv.config();
 
@@ -104,7 +104,10 @@ const commands = [
     ),
   new SlashCommandBuilder()
     .setName('적용')
-    .setDescription('현재 프로젝트의 변경 코드를 GitHub 원격 레포지토리에 반영(Push)합니다.')
+    .setDescription('현재 프로젝트의 변경 코드를 GitHub 원격 레포지토리에 반영(Push)합니다.'),
+  new SlashCommandBuilder()
+    .setName('앱삭제')
+    .setDescription('현재 활성화된 개발 세션의 로컬 파일, GitHub 저장소 및 세션 정보를 영구 삭제합니다.')
 ].map(command => command.toJSON());
 
 client.once('ready', async (readyClient) => {
@@ -260,6 +263,67 @@ client.on('interactionCreate', async (interaction: Interaction) => {
       console.error(error);
       await interaction.editReply(`❌ GitHub 동기화 적용 실패: ${error.message}`);
     }
+  }
+
+  // [명령어 5] 가상 세션 앱 말소 및 파일/원격 저장소 완전 삭제
+  if (commandName === '앱삭제') {
+    const gitToken = process.env.GIT_TOKEN;
+    if (!gitToken) {
+      return interaction.reply({
+        content: '❌ 서버 `.env` 파일에 `GIT_TOKEN` 설정이 누락되었습니다. GitHub Personal Access Token을 설정해 주세요.',
+        ephemeral: true
+      });
+    }
+
+    await interaction.deferReply();
+
+    let githubDeleted = false;
+    let githubErrorMsg = '';
+
+    // 1. GitHub 원격 레포지토리 삭제 시도
+    try {
+      await deleteRemoteRepo(session.app_name, gitToken);
+      githubDeleted = true;
+    } catch (error: any) {
+      console.error('GitHub 레포지토리 삭제 오류:', error);
+      githubErrorMsg = error.message;
+    }
+
+    // 2. 로컬 디렉토리 삭제 시도
+    let localDeleted = false;
+    try {
+      if (fs.existsSync(session.project_path)) {
+        fs.rmSync(session.project_path, { recursive: true, force: true });
+      }
+      localDeleted = true;
+    } catch (error: any) {
+      console.error('로컬 디렉토리 삭제 오류:', error);
+    }
+
+    // 3. SQLite 세션 말소
+    let sessionDeleted = false;
+    try {
+      dbManager.deleteSession(channelId);
+      sessionDeleted = true;
+    } catch (error: any) {
+      console.error('SQLite 세션 삭제 오류:', error);
+    }
+
+    // 결과 메시지 구성
+    const statusLines = [
+      `🧹 **[${session.app_name}] 프로젝트 세션 말소 결과**`,
+      localDeleted ? '✅ 로컬 프로젝트 디렉토리 삭제 완료' : '❌ 로컬 프로젝트 디렉토리 삭제 실패',
+      sessionDeleted ? '✅ SQLite 세션 정보 삭제 완료' : '❌ SQLite 세션 정보 삭제 실패',
+    ];
+
+    if (githubDeleted) {
+      statusLines.push('✅ GitHub 원격 저장소 삭제 완료');
+    } else {
+      statusLines.push(`⚠️ GitHub 원격 저장소 삭제 실패 (사유: ${githubErrorMsg})`);
+      statusLines.push(`   *(참고: GitHub 토큰에 \`delete_repo\` 권한이 없을 경우 삭제할 수 없습니다.)*`);
+    }
+
+    await interaction.editReply(statusLines.join('\n'));
   }
 });
 

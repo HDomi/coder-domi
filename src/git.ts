@@ -102,3 +102,43 @@ export async function setupAndPushRepo(
 
   return `https://github.com/${username}/${repoName}`;
 }
+
+export async function deleteRemoteRepo(
+  appName: string,
+  gitToken: string
+): Promise<void> {
+  // 1. Get authenticated user name
+  const userResponse = await fetch('https://api.github.com/user', {
+    headers: {
+      'Authorization': `Bearer ${gitToken}`,
+      'Accept': 'application/vnd.github+json',
+      'User-Agent': 'corder-domi-bot',
+      'X-GitHub-Api-Version': '2022-11-28'
+    }
+  });
+
+  if (!userResponse.ok) {
+    const errorText = await userResponse.text();
+    throw new Error(`GitHub 사용자 조회 실패: ${userResponse.statusText} (${errorText})`);
+  }
+
+  const userData = await userResponse.json() as GitHubUser;
+  const username = userData.login;
+  const repoName = appName;
+
+  // 2. Delete remote repository
+  const deleteResponse = await fetch(`https://api.github.com/repos/${username}/${repoName}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${gitToken}`,
+      'Accept': 'application/vnd.github+json',
+      'User-Agent': 'corder-domi-bot',
+      'X-GitHub-Api-Version': '2022-11-28'
+    }
+  });
+
+  if (deleteResponse.status !== 204 && deleteResponse.status !== 404) {
+    const errorText = await deleteResponse.text();
+    throw new Error(`GitHub 레포지토리 삭제 실패: ${deleteResponse.statusText} (${errorText})`);
+  }
+}

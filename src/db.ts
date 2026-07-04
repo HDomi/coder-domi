@@ -48,5 +48,11 @@ export const dbManager = {
         last_updated = CURRENT_TIMESTAMP
     `);
     stmt.run(channelId, projectPath, specSummary, appName);
+  },
+
+  // 채널 ID 기반 개발 세션 정보 삭제 (말소)
+  deleteSession(channelId: string) {
+    const stmt = db.prepare('DELETE FROM project_sessions WHERE channel_id = ?');
+    stmt.run(channelId);
   }
 };

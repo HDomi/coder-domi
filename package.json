@@ -1,5 +1,5 @@
 {
-  "name": "discord-corder-domi-agent",
+  "name": "discord-coder-domi-agent",
   "version": "1.0.0",
   "description": "Discord ChatOps AI Coding Agent running on Qwen2.5-Coder",
   "main": "dist/index.js",

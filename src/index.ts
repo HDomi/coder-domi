@@ -1,11 +1,14 @@
-import { Client, GatewayIntentBits, Interaction, SlashCommandBuilder, REST, Routes } from 'discord.js';
-import * as dotenv from 'dotenv';
-import * as fs from 'fs';
-import * as path from 'path';
-import { dbManager } from './db';
-import { generateCodeUpdate } from './ollama';
-import { setupAndPushRepo, deleteRemoteRepo } from './git';
-import { initLogger, getOllamaLogs } from './logger';
+import {
+  Client,
+  GatewayIntentBits,
+  Interaction,
+  REST,
+  Routes,
+} from "discord.js";
+import * as dotenv from "dotenv";
+import { dbManager } from "./db";
+import { initLogger } from "./logger";
+import { commands } from "./commands";
 
 dotenv.config();
 
@@ -13,517 +16,88 @@ dotenv.config();
 initLogger();
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-  ],
+  intents: [GatewayIntentBits.Guilds],
 });
 
-// 미니 PC 인프라 내에서 대상 타겟 코드가 동기화되어 움직일 워크스페이스 정의
-const WORKSPACE_DIR = path.resolve(process.env.HOME || '', 'discord-corder-domi/workspace');
+// 명령어 이름으로 매핑하는 Map 구성
+const commandMap = new Map(commands.map((cmd) => [cmd.data.name, cmd]));
+const commandsJson = commands.map((cmd) => cmd.data.toJSON());
 
-if (!fs.existsSync(WORKSPACE_DIR)) {
-  fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
-}
-
-// 워크스페이스 내부의 텍스트 기반 소스 파일들을 재귀적으로 수집하여 컨텍스트화
-const IGNORED_NAMES = new Set([
-  '.git',
-  'node_modules',
-  'dist',
-  'build',
-  'out',
-  '.output',
-  '.nuxt',
-  '.next',
-  '.svelte-kit',
-  '.cache',
-  'cache',
-  '.DS_Store',
-  'package-lock.json',
-  'yarn.lock',
-  'pnpm-lock.yaml',
-  'chatops.db'
-]);
-
-function getWorkspaceContext(projectPath: string): { files: { path: string; content: string }[] } {
-  const result: { files: { path: string; content: string }[] } = { files: [] };
-  let fileCount = 0;
-  
-  function traverse(currentDir: string) {
-    if (!fs.existsSync(currentDir)) return;
-    const list = fs.readdirSync(currentDir);
-    for (const item of list) {
-      if (IGNORED_NAMES.has(item)) continue;
-      
-      const fullPath = path.join(currentDir, item);
-      const stat = fs.statSync(fullPath);
-      
-      if (stat.isDirectory()) {
-        traverse(fullPath);
-      } else if (stat.isFile()) {
-        // 보안/VRAM 초과 방지: 200KB를 넘는 대형 파일 또는 파일 한계(150개)를 넘어가면 건너뜀
-        if (stat.size > 204800 || fileCount >= 150) continue;
-        
-        const relativePath = path.relative(projectPath, fullPath);
-        try {
-          const content = fs.readFileSync(fullPath, 'utf-8');
-          result.files.push({ path: relativePath, content });
-          fileCount++;
-        } catch (e) {
-          // 바이너리 파일이나 읽을 수 없는 파일은 무시
-        }
-      }
-    }
-  }
-  
-  traverse(projectPath);
-  return result;
-}
-
-// 등록할 슬래시 커맨드 명세 정의
-const commands = [
-  new SlashCommandBuilder()
-    .setName('연결')
-    .setDescription('이 채널을 특정 애플리케이션의 개발 세션방으로 연결합니다.')
-    .addStringOption(option =>
-      option.setName('앱이름')
-        .setDescription('생성하거나 연결할 애플리케이션 이름 (영어/숫자/대시만 가능)')
-        .setRequired(true)
-    ),
-  new SlashCommandBuilder()
-    .setName('기획')
-    .setDescription('프로젝트 기획 요구사항을 추가합니다.')
-    .addStringOption(option =>
-      option.setName('내용')
-        .setDescription('추가할 기획 내용 (예: API 응답 지연 시 스켈레톤 UI 노출)')
-        .setRequired(true)
-    ),
-  new SlashCommandBuilder()
-    .setName('코딩')
-    .setDescription('Ollama를 통해 기획 명세 및 대화 내용을 분석해 자동으로 파일을 생성/수정합니다.')
-    .addStringOption(option =>
-      option.setName('요청')
-        .setDescription('실행할 코딩 작업 지시 (예: 로그인 버튼 컴포넌트 추가)')
-        .setRequired(true)
-    ),
-  new SlashCommandBuilder()
-    .setName('적용')
-    .setDescription('현재 프로젝트의 변경 코드를 GitHub 원격 레포지토리에 반영(Push)합니다.'),
-  new SlashCommandBuilder()
-    .setName('앱삭제')
-    .setDescription('현재 활성화된 개발 세션의 로컬 파일, GitHub 저장소 및 세션 정보를 영구 삭제합니다.')
-    .addStringOption(option =>
-      option.setName('앱이름')
-        .setDescription('삭제 확인을 위해 현재 세션의 앱 이름을 똑같이 입력하세요.')
-        .setRequired(true)
-    ),
-  new SlashCommandBuilder()
-    .setName('로그')
-    .setDescription('현재 가동 중인 봇의 최근 100줄 로그를 출력합니다.'),
-  new SlashCommandBuilder()
-    .setName('스펙')
-    .setDescription('현재 세션의 기획 명세서(SPEC.md)를 이미지 형태로 예쁘게 렌더링하여 출력합니다.'),
-  new SlashCommandBuilder()
-    .setName('연결끊기')
-    .setDescription('현재 채널의 활성화된 개발 세션 연결을 해제합니다. (로컬 파일 및 GitHub 레포는 안전하게 보존됩니다.)')
-].map(command => command.toJSON());
-
-client.once('ready', async (readyClient) => {
-  console.log(`🚀 Corder-Domi ChatOps 에이전트 가동 상태 정상: ${readyClient.user?.tag}`);
+client.once("ready", async (readyClient) => {
+  console.log(
+    `🚀 Coder-Domi ChatOps 에이전트 가동 상태 정상: ${readyClient.user?.tag}`,
+  );
 
   const token = process.env.DISCORD_TOKEN;
   const clientId = process.env.CLIENT_ID;
 
   if (token && clientId) {
     try {
-      const rest = new REST({ version: '10' }).setToken(token);
-      console.log(`Started refreshing ${commands.length} application (/) commands.`);
-      await rest.put(
-        Routes.applicationCommands(clientId),
-        { body: commands }
+      const rest = new REST({ version: "10" }).setToken(token);
+      console.log(
+        `Started refreshing ${commandsJson.length} application (/) commands.`,
       );
-      console.log(`Successfully reloaded ${commands.length} application (/) commands.`);
+      await rest.put(Routes.applicationCommands(clientId), { body: commandsJson });
+      console.log(
+        `Successfully reloaded ${commandsJson.length} application (/) commands.`,
+      );
     } catch (error) {
-      console.error('⚠️ 슬래시 커맨드 등록 중 오류 발생:', error);
+      console.error("⚠️ 슬래시 커맨드 등록 중 오류 발생:", error);
     }
   } else {
-    console.warn('⚠️ DISCORD_TOKEN 또는 CLIENT_ID가 .env에 설정되지 않아 슬래시 커맨드를 등록할 수 없습니다.');
+    console.warn(
+      "⚠️ DISCORD_TOKEN 또는 CLIENT_ID가 .env에 설정되지 않아 슬래시 커맨드를 등록할 수 없습니다.",
+    );
   }
 });
 
-client.on('interactionCreate', async (interaction: Interaction) => {
+client.on("interactionCreate", async (interaction: Interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  const { commandName, channelId } = interaction;
+  const { commandName } = interaction;
+  const command = commandMap.get(commandName);
 
-  // [명령어 1] 해당 채팅방을 가상 개발 세션으로 연결
-  if (commandName === '연결') {
-    const appName = interaction.options.getString('앱이름', true).trim();
-    
-    // 영어, 숫자, 대시(-) 문자만 포함하도록 방어적 이름 체크
-    if (!/^[a-zA-Z0-9-_]+$/.test(appName)) {
-      return interaction.reply({
-        content: '❌ 앱 이름은 영문, 숫자, 대시(-), 언더바(_)만 사용할 수 있습니다.',
-        ephemeral: true
-      });
-    }
-
-    const projectPath = path.join(WORKSPACE_DIR, appName);
-    if (!fs.existsSync(projectPath)) {
-      fs.mkdirSync(projectPath, { recursive: true });
-    }
-
-    dbManager.saveSession(channelId, projectPath, '', appName);
-    return interaction.reply(`✅ 이 채널을 [${appName}] 프로젝트 전용 실시간 개발 세션방으로 연결했습니다.\n경로: \`${projectPath}\``);
-  }
-
-  // [추가] Ollama 실행 로그 출력
-  if (commandName === '로그') {
-    await interaction.deferReply();
-    try {
-      const logs = getOllamaLogs(100);
-      if (!logs.trim()) {
-        await interaction.editReply('ℹ️ 기록된 Ollama 로그가 없습니다.');
-        return;
-      }
-      
-      const codeBlockFormatted = `\`\`\`\n${logs}\n\`\`\``;
-      if (codeBlockFormatted.length > 2000) {
-        const buffer = Buffer.from(logs, 'utf-8');
-        await interaction.editReply({
-          content: '📋 Ollama 최근 100줄 로그의 용량이 2000자를 초과하여 텍스트 파일로 첨부합니다.',
-          files: [{
-            attachment: buffer,
-            name: 'ollama_recent_logs.txt'
-          }]
-        });
-      } else {
-        await interaction.editReply(codeBlockFormatted);
-      }
-    } catch (error: any) {
-      console.error(error);
-      await interaction.editReply(`❌ Ollama 로그를 불러오는 중 에러가 발생했습니다: ${error.message}`);
-    }
+  if (!command) {
+    console.warn(`⚠️ 등록되지 않은 커맨드 호출: ${commandName}`);
     return;
   }
 
-  const session = dbManager.getSession(channelId);
-  if (!session) {
-    return interaction.reply({
-      content: '❌ 활성화된 개발 세션이 없습니다. 먼저 `/연결 [앱이름]` 명령어로 채널을 연결해 주세요.',
-      ephemeral: true
-    });
-  }
-
-  // [추가] 가상 개발 세션 연결 끊기
-  if (commandName === '연결끊기') {
-    try {
-      dbManager.deleteSession(channelId);
-      return interaction.reply(`✅ [${session.app_name}] 프로젝트와의 개발 세션 연결이 성공적으로 해제되었습니다.\n(참고: 로컬 디렉토리 파일 및 GitHub 원격 레포지토리는 안전하게 보존되었습니다.)`);
-    } catch (error: any) {
-      console.error(error);
-      return interaction.reply(`❌ 개발 세션 연결 해제 중 오류가 발생했습니다: ${error.message}`);
-    }
-  }
-
-  // [추가] SPEC.md 이미지 렌더링 출력
-  if (commandName === '스펙') {
-    await interaction.deferReply();
-    try {
-      const specFilePath = path.join(session.project_path, 'SPEC.md');
-      if (!fs.existsSync(specFilePath)) {
-        await interaction.editReply('❌ 현재 세션에 생성된 기획 명세서(SPEC.md)가 없습니다. 먼저 `/기획` 명령어로 기획을 등록해 주세요.');
-        return;
-      }
-
-      const specContent = fs.readFileSync(specFilePath, 'utf-8');
-      if (!specContent.trim()) {
-        await interaction.editReply('ℹ️ 기획 명세서(SPEC.md)가 비어 있습니다.');
-        return;
-      }
-
-      // marked를 사용하여 마크다운을 HTML로 파싱
-      const { marked } = await import('marked');
-      const htmlBody = await marked.parse(specContent);
-
-      // GitHub 스타일 Markdown CSS 템플릿 구성
-      const htmlTemplate = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css">
-        <style>
-          body {
-            background-color: #0d1117;
-            padding: 30px;
-            margin: 0;
-            display: flex;
-            justify-content: center;
-          }
-          .markdown-body {
-            box-sizing: border-box;
-            min-width: 200px;
-            max-width: 800px;
-            width: 100%;
-            padding: 45px;
-            background-color: #0d1117;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            color: #c9d1d9;
-          }
-          @media (max-width: 767px) {
-            .markdown-body {
-              padding: 15px;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <article class="markdown-body">
-          ${htmlBody}
-        </article>
-      </body>
-      </html>
-      `;
-
-      // puppeteer-core를 사용하여 스크린샷 렌더링
-      const puppeteer = await import('puppeteer-core');
-      
-      // Puppeteer 실행 경로 탐색 (로컬 macOS 기본 Chrome / Docker 환경변수 지원)
-      let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-      if (!executablePath) {
-        const paths = [
-          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-          '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-          '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
-          '/usr/bin/chromium-browser',
-          '/usr/bin/chromium'
-        ];
-        for (const p of paths) {
-          if (fs.existsSync(p)) {
-            executablePath = p;
-            break;
-          }
-        }
-      }
-
-      if (!executablePath) {
-        throw new Error('Chromium 브라우저 실행 경로를 찾을 수 없습니다. 환경변수 PUPPETEER_EXECUTABLE_PATH를 설정해 주세요.');
-      }
-
-      const browser = await puppeteer.launch({
-        executablePath,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-        headless: true
-      });
-
-      const page = await browser.newPage();
-      await page.setContent(htmlTemplate, { waitUntil: 'networkidle0' });
-      
-      // 페이지 크기를 콘텐츠 영역에 맞춰 설정
-      const bodyHeight = await page.evaluate(() => document.body.scrollHeight);
-      const bodyWidth = await page.evaluate(() => document.body.scrollWidth);
-      
-      await page.setViewport({
-        width: Math.max(bodyWidth, 900),
-        height: Math.max(bodyHeight, 100),
-        deviceScaleFactor: 2 // 스크린샷 선명도 확보
-      });
-
-      const element = await page.$('.markdown-body');
-      let imageBuffer: Buffer;
-      if (element) {
-        imageBuffer = await element.screenshot({ type: 'png' }) as Buffer;
-      } else {
-        imageBuffer = await page.screenshot({ fullPage: true, type: 'png' }) as Buffer;
-      }
-
-      await browser.close();
-
-      await interaction.editReply({
-        content: `📋 **[${session.app_name}] 프로젝트 기획 명세서 (SPEC.md)**`,
-        files: [{
-          attachment: imageBuffer,
-          name: 'spec_sheet.png'
-        }]
-      });
-
-    } catch (error: any) {
-      console.error(error);
-      await interaction.editReply(`❌ SPEC.md 이미지 렌더링 실패: ${error.message}`);
-    }
-    return;
-  }
-
-  // [명령어 2] 대화 기록 한계를 깨는 무제한 기획 명세서 아카이빙
-  if (commandName === '기획') {
-    const newSpec = interaction.options.getString('내용', true).trim();
-
-    // 기존 세션에 누적 적재
-    const updatedSpec = session.spec_summary 
-      ? `${session.spec_summary}\n- ${newSpec}`
-      : `- ${newSpec}`;
-
-    dbManager.saveSession(channelId, session.project_path, updatedSpec, session.app_name);
-
-    // 트랙 A: 파일 시스템(SPEC.md) 실시간 생성 및 동기화 박제
-    const specFilePath = path.join(session.project_path, 'SPEC.md');
-    fs.writeFileSync(specFilePath, updatedSpec, 'utf-8');
-
-    return interaction.reply(`📝 기획 명세가 추가되었습니다. 전체 기획 아카이브는 프로젝트 내부 SPEC.md 파일에 영구 릴리즈됩니다.`);
-  }
-
-  // [명령어 3] qwen2.5-coder 두뇌 가동 -> 자동 파일 생성 및 변조 (로컬 저장만 처리)
-  if (commandName === '코딩') {
-    const userRequest = interaction.options.getString('요청', true).trim();
-
-    if (!session.spec_summary) {
-      return interaction.reply('❌ 활성화된 기획 명세서가 부재합니다. 먼저 `/기획` 명령어로 프로젝트 골격을 설명해 주세요.');
-    }
-
-    // 디스코드는 3초 이내에 응답하지 않으면 타임아웃 에러가 발생하므로 디퍼 응답 상태로 전환합니다.
-    await interaction.deferReply();
-
-    try {
-      // 1. 워크스페이스 내 모든 소스 파일 정보 수집
-      const workspaceContext = getWorkspaceContext(session.project_path);
-
-      // 2. Ollama JSON 응답 호출
-      const changes = await generateCodeUpdate(session.spec_summary, workspaceContext, userRequest);
-
-      if (changes.length === 0) {
-        await interaction.editReply(`💻 **사용자 요청:** "${userRequest}"\n\nℹ️ Ollama 분석 결과, 변경해야 할 파일이 없습니다.`);
-        return;
-      }
-
-      const updatedFiles: string[] = [];
-
-      // 3. 파일 쓰기 처리
-      for (const change of changes) {
-        const targetPath = path.resolve(session.project_path, change.path);
-        
-        // 경로 이탈 보안 방지 검사
-        if (!targetPath.startsWith(session.project_path)) {
-          console.warn(`[Security Warning] Blocked file write attempt outside workspace: ${change.path}`);
-          continue;
-        }
-
-        // 폴더 생성
-        const dirPath = path.dirname(targetPath);
-        if (!fs.existsSync(dirPath)) {
-          fs.mkdirSync(dirPath, { recursive: true });
-        }
-
-        // 파일 덮어쓰기
-        fs.writeFileSync(targetPath, change.content, 'utf-8');
-        updatedFiles.push(change.path);
-      }
-
-      const fileListStr = updatedFiles.map(f => `- \`${f}\``).join('\n');
-      await interaction.editReply(`💻 **사용자 요청:** "${userRequest}"\n\n✅ AI 코드 자동 인젝션 완료!\n다음 파일들이 생성/수정되어 로컬 워크스페이스에 저장되었습니다:\n${fileListStr}\n\nGitHub 원격 레포지토리에 반영하려면 \`/적용\` 명령을 입력해 주세요.`);
-
-    } catch (error: any) {
-      console.error(error);
-      const errorMsg = `💻 **사용자 요청:** "${userRequest}"\n\n❌ ChatOps 자동화 파이프라인 중단 에러: ${error.message}`;
-      if (interaction.deferred) {
-        await interaction.editReply(errorMsg);
-      } else {
-        await interaction.reply(errorMsg);
-      }
-    }
-  }
-
-  // [명령어 4] GitHub 원격 자동 생성 및 푸시 파이프라인
-  if (commandName === '적용') {
-    const gitToken = process.env.GIT_TOKEN;
-    if (!gitToken) {
+  // 사전 조건(Preconditions) 검사
+  let session = null;
+  if (command.requiresSession) {
+    session = dbManager.getSession(interaction.channelId);
+    if (!session) {
       return interaction.reply({
-        content: '❌ 서버 `.env` 파일에 `GIT_TOKEN` 설정이 누락되었습니다. GitHub Personal Access Token을 설정해 주세요.',
-        ephemeral: true
+        content:
+          "❌ 활성화된 개발 세션이 없습니다. 먼저 `/연결 [앱이름]` 명령어로 채널을 연결해 주세요.",
+        ephemeral: true,
       });
-    }
-
-    await interaction.deferReply();
-
-    try {
-      const repoUrl = await setupAndPushRepo(session.project_path, session.app_name, gitToken);
-      await interaction.editReply(`🚀 GitHub 레포지토리 배포 완료!\n원격 저장소 주소: ${repoUrl}`);
-    } catch (error: any) {
-      console.error(error);
-      await interaction.editReply(`❌ GitHub 동기화 적용 실패: ${error.message}`);
     }
   }
 
-  // [명령어 5] 가상 세션 앱 말소 및 파일/원격 저장소 완전 삭제
-  if (commandName === '앱삭제') {
-    const inputAppName = interaction.options.getString('앱이름', true).trim();
-
-    // 이중 확인 검사: 입력한 이름이 현재 세션의 앱 이름과 일치하는지 확인
-    if (inputAppName !== session.app_name) {
+  if (command.requiresSpec) {
+    // requiresSpec이 true인 경우 requiresSession도 참이어야 하므로 session이 존재합니다.
+    if (!session || !session.spec_summary) {
       return interaction.reply({
-        content: `❌ 입력하신 앱 이름(\`${inputAppName}\`)이 현재 세션의 앱 이름(\`${session.app_name}\`)과 다릅니다. 삭제가 취소되었습니다.`,
-        ephemeral: true
+        content:
+          "❌ 활성화된 기획 명세서가 부재합니다. 먼저 `/기획` 명령어로 프로젝트 골격을 설명해 주세요.",
+        ephemeral: true,
       });
     }
+  }
 
-    const gitToken = process.env.GIT_TOKEN;
-    if (!gitToken) {
-      return interaction.reply({
-        content: '❌ 서버 `.env` 파일에 `GIT_TOKEN` 설정이 누락되었습니다. GitHub Personal Access Token을 설정해 주세요.',
-        ephemeral: true
-      });
-    }
-
-    await interaction.deferReply();
-
-    let githubDeleted = false;
-    let githubErrorMsg = '';
-
-    // 1. GitHub 원격 레포지토리 삭제 시도
-    try {
-      await deleteRemoteRepo(session.app_name, gitToken);
-      githubDeleted = true;
-    } catch (error: any) {
-      console.error('GitHub 레포지토리 삭제 오류:', error);
-      githubErrorMsg = error.message;
-    }
-
-    // 2. 로컬 디렉토리 삭제 시도
-    let localDeleted = false;
-    try {
-      if (fs.existsSync(session.project_path)) {
-        fs.rmSync(session.project_path, { recursive: true, force: true });
-      }
-      localDeleted = true;
-    } catch (error: any) {
-      console.error('로컬 디렉토리 삭제 오류:', error);
-    }
-
-    // 3. SQLite 세션 말소
-    let sessionDeleted = false;
-    try {
-      dbManager.deleteSession(channelId);
-      sessionDeleted = true;
-    } catch (error: any) {
-      console.error('SQLite 세션 삭제 오류:', error);
-    }
-
-    // 결과 메시지 구성
-    const statusLines = [
-      `🧹 **[${session.app_name}] 프로젝트 세션 말소 결과**`,
-      localDeleted ? '✅ 로컬 프로젝트 디렉토리 삭제 완료' : '❌ 로컬 프로젝트 디렉토리 삭제 실패',
-      sessionDeleted ? '✅ SQLite 세션 정보 삭제 완료' : '❌ SQLite 세션 정보 삭제 실패',
-    ];
-
-    if (githubDeleted) {
-      statusLines.push('✅ GitHub 원격 저장소 삭제 완료');
+  try {
+    await command.execute(interaction, session || undefined);
+  } catch (error: any) {
+    console.error(`❌ 커맨드 실행 중 에러 발생 (${commandName}):`, error);
+    const errorMsg = `❌ 명령어 실행 중 오류가 발생했습니다: ${error.message}`;
+    if (interaction.deferred) {
+      await interaction.editReply(errorMsg);
+    } else if (interaction.replied) {
+      await interaction.followUp({ content: errorMsg, ephemeral: true });
     } else {
-      statusLines.push(`⚠️ GitHub 원격 저장소 삭제 실패 (사유: ${githubErrorMsg})`);
-      statusLines.push(`   *(참고: GitHub 토큰에 \`delete_repo\` 권한이 없을 경우 삭제할 수 없습니다.)*`);
+      await interaction.reply({ content: errorMsg, ephemeral: true });
     }
-
-    await interaction.editReply(statusLines.join('\n'));
   }
 });
 

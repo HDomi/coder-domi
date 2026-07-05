@@ -1,9 +1,9 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { execSync } from 'child_process';
+import * as fs from "fs";
+import * as path from "path";
+import { execSync } from "child_process";
 
-const LOG_DIR = path.resolve(__dirname, '../logs');
-const LOG_FILE = path.join(LOG_DIR, 'bot.log');
+const LOG_DIR = path.resolve(__dirname, "../logs");
+const LOG_FILE = path.join(LOG_DIR, "bot.log");
 
 // 로그 디렉토리 생성
 if (!fs.existsSync(LOG_DIR)) {
@@ -23,16 +23,16 @@ function getTimestamp(): string {
 function writeToFile(level: string, message: string) {
   try {
     const logMessage = `[${getTimestamp()}] [${level}] ${message}\n`;
-    fs.appendFileSync(LOG_FILE, logMessage, 'utf-8');
+    fs.appendFileSync(LOG_FILE, logMessage, "utf-8");
   } catch (e) {
-    originalError('Failed to write log to file:', e);
+    originalError("Failed to write log to file:", e);
   }
 }
 
 function formatArgs(args: any[]): string {
   return args
-    .map(arg => {
-      if (typeof arg === 'object') {
+    .map((arg) => {
+      if (typeof arg === "object") {
         try {
           return JSON.stringify(arg);
         } catch {
@@ -41,49 +41,49 @@ function formatArgs(args: any[]): string {
       }
       return String(arg);
     })
-    .join(' ');
+    .join(" ");
 }
 
 export function initLogger() {
   console.log = (...args: any[]) => {
     const message = formatArgs(args);
     originalLog(...args);
-    writeToFile('INFO', message);
+    writeToFile("INFO", message);
   };
 
   console.error = (...args: any[]) => {
     const message = formatArgs(args);
     originalError(...args);
-    writeToFile('ERROR', message);
+    writeToFile("ERROR", message);
   };
 
   console.warn = (...args: any[]) => {
     const message = formatArgs(args);
     originalWarn(...args);
-    writeToFile('WARN', message);
+    writeToFile("WARN", message);
   };
 
   console.info = (...args: any[]) => {
     const message = formatArgs(args);
     originalInfo(...args);
-    writeToFile('INFO', message);
+    writeToFile("INFO", message);
   };
 }
 
 export function getRecentLogs(lineCount: number = 100): string {
   if (!fs.existsSync(LOG_FILE)) {
-    return '로그 파일이 존재하지 않습니다.';
+    return "로그 파일이 존재하지 않습니다.";
   }
 
-  const content = fs.readFileSync(LOG_FILE, 'utf-8');
-  const lines = content.split('\n');
-  
-  if (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+  const content = fs.readFileSync(LOG_FILE, "utf-8");
+  const lines = content.split("\n");
+
+  if (lines.length > 0 && lines[lines.length - 1].trim() === "") {
     lines.pop();
   }
 
   const recentLines = lines.slice(-lineCount);
-  return recentLines.join('\n');
+  return recentLines.join("\n");
 }
 
 export function getOllamaLogs(lineCount: number = 100): string {
@@ -91,7 +91,7 @@ export function getOllamaLogs(lineCount: number = 100): string {
   const envPath = process.env.OLLAMA_LOG_PATH;
   if (envPath && fs.existsSync(envPath)) {
     try {
-      const content = fs.readFileSync(envPath, 'utf-8');
+      const content = fs.readFileSync(envPath, "utf-8");
       return getTailLines(content, lineCount);
     } catch (e: any) {
       console.error(`Failed to read OLLAMA_LOG_PATH (${envPath}):`, e.message);
@@ -99,10 +99,13 @@ export function getOllamaLogs(lineCount: number = 100): string {
   }
 
   // 2단계: macOS 기본 경로 확인
-  const macDefaultPath = path.join(process.env.HOME || '', '.ollama/logs/server.log');
+  const macDefaultPath = path.join(
+    process.env.HOME || "",
+    ".ollama/logs/server.log",
+  );
   if (fs.existsSync(macDefaultPath)) {
     try {
-      const content = fs.readFileSync(macDefaultPath, 'utf-8');
+      const content = fs.readFileSync(macDefaultPath, "utf-8");
       return getTailLines(content, lineCount);
     } catch (e: any) {
       console.error(`Failed to read macOS default Ollama log:`, e.message);
@@ -111,7 +114,10 @@ export function getOllamaLogs(lineCount: number = 100): string {
 
   // 3단계: 리눅스 systemd journalctl 실행 시도
   try {
-    const output = execSync(`journalctl -u ollama -n ${lineCount} --no-pager`, { encoding: 'utf-8', stdio: 'pipe' });
+    const output = execSync(`journalctl -u ollama -n ${lineCount} --no-pager`, {
+      encoding: "utf-8",
+      stdio: "pipe",
+    });
     if (output && output.trim()) {
       return output.trim();
     }
@@ -121,7 +127,10 @@ export function getOllamaLogs(lineCount: number = 100): string {
 
   // 4단계: Docker 컨테이너 로그 실행 시도 (ollama 컨테이너명 가정)
   try {
-    const output = execSync(`docker logs ollama --tail ${lineCount}`, { encoding: 'utf-8', stdio: 'pipe' });
+    const output = execSync(`docker logs ollama --tail ${lineCount}`, {
+      encoding: "utf-8",
+      stdio: "pipe",
+    });
     if (output && output.trim()) {
       return output.trim();
     }
@@ -135,9 +144,9 @@ export function getOllamaLogs(lineCount: number = 100): string {
 }
 
 function getTailLines(content: string, lineCount: number): string {
-  const lines = content.split('\n');
-  if (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+  const lines = content.split("\n");
+  if (lines.length > 0 && lines[lines.length - 1].trim() === "") {
     lines.pop();
   }
-  return lines.slice(-lineCount).join('\n');
+  return lines.slice(-lineCount).join("\n");
 }

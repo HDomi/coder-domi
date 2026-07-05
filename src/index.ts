@@ -5,8 +5,12 @@ import * as path from 'path';
 import { dbManager } from './db';
 import { generateCodeUpdate } from './ollama';
 import { setupAndPushRepo, deleteRemoteRepo } from './git';
+import { initLogger, getOllamaLogs } from './logger';
 
 dotenv.config();
+
+// 글로벌 console.log/error 우회 및 파일 로깅 초기화
+initLogger();
 
 const client = new Client({
   intents: [
@@ -112,7 +116,13 @@ const commands = [
       option.setName('앱이름')
         .setDescription('삭제 확인을 위해 현재 세션의 앱 이름을 똑같이 입력하세요.')
         .setRequired(true)
-    )
+    ),
+  new SlashCommandBuilder()
+    .setName('로그')
+    .setDescription('현재 가동 중인 봇의 최근 100줄 로그를 출력합니다.'),
+  new SlashCommandBuilder()
+    .setName('스펙')
+    .setDescription('현재 세션의 기획 명세서(SPEC.md)를 이미지 형태로 예쁘게 렌더링하여 출력합니다.')
 ].map(command => command.toJSON());
 
 client.once('ready', async (readyClient) => {
@@ -164,12 +174,172 @@ client.on('interactionCreate', async (interaction: Interaction) => {
     return interaction.reply(`✅ 이 채널을 [${appName}] 프로젝트 전용 실시간 개발 세션방으로 연결했습니다.\n경로: \`${projectPath}\``);
   }
 
+  // [추가] Ollama 실행 로그 출력
+  if (commandName === '로그') {
+    await interaction.deferReply();
+    try {
+      const logs = getOllamaLogs(100);
+      if (!logs.trim()) {
+        await interaction.editReply('ℹ️ 기록된 Ollama 로그가 없습니다.');
+        return;
+      }
+      
+      const codeBlockFormatted = `\`\`\`\n${logs}\n\`\`\``;
+      if (codeBlockFormatted.length > 2000) {
+        const buffer = Buffer.from(logs, 'utf-8');
+        await interaction.editReply({
+          content: '📋 Ollama 최근 100줄 로그의 용량이 2000자를 초과하여 텍스트 파일로 첨부합니다.',
+          files: [{
+            attachment: buffer,
+            name: 'ollama_recent_logs.txt'
+          }]
+        });
+      } else {
+        await interaction.editReply(codeBlockFormatted);
+      }
+    } catch (error: any) {
+      console.error(error);
+      await interaction.editReply(`❌ Ollama 로그를 불러오는 중 에러가 발생했습니다: ${error.message}`);
+    }
+    return;
+  }
+
   const session = dbManager.getSession(channelId);
   if (!session) {
     return interaction.reply({
       content: '❌ 활성화된 개발 세션이 없습니다. 먼저 `/연결 [앱이름]` 명령어로 채널을 연결해 주세요.',
       ephemeral: true
     });
+  }
+
+  // [추가] SPEC.md 이미지 렌더링 출력
+  if (commandName === '스펙') {
+    await interaction.deferReply();
+    try {
+      const specFilePath = path.join(session.project_path, 'SPEC.md');
+      if (!fs.existsSync(specFilePath)) {
+        await interaction.editReply('❌ 현재 세션에 생성된 기획 명세서(SPEC.md)가 없습니다. 먼저 `/기획` 명령어로 기획을 등록해 주세요.');
+        return;
+      }
+
+      const specContent = fs.readFileSync(specFilePath, 'utf-8');
+      if (!specContent.trim()) {
+        await interaction.editReply('ℹ️ 기획 명세서(SPEC.md)가 비어 있습니다.');
+        return;
+      }
+
+      // marked를 사용하여 마크다운을 HTML로 파싱
+      const { marked } = await import('marked');
+      const htmlBody = await marked.parse(specContent);
+
+      // GitHub 스타일 Markdown CSS 템플릿 구성
+      const htmlTemplate = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css">
+        <style>
+          body {
+            background-color: #0d1117;
+            padding: 30px;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+          }
+          .markdown-body {
+            box-sizing: border-box;
+            min-width: 200px;
+            max-width: 800px;
+            width: 100%;
+            padding: 45px;
+            background-color: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+          }
+          @media (max-width: 767px) {
+            .markdown-body {
+              padding: 15px;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <article class="markdown-body">
+          ${htmlBody}
+        </article>
+      </body>
+      </html>
+      `;
+
+      // puppeteer-core를 사용하여 스크린샷 렌더링
+      const puppeteer = await import('puppeteer-core');
+      
+      // Puppeteer 실행 경로 탐색 (로컬 macOS 기본 Chrome / Docker 환경변수 지원)
+      let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+      if (!executablePath) {
+        const paths = [
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+          '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+          '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+          '/usr/bin/chromium-browser',
+          '/usr/bin/chromium'
+        ];
+        for (const p of paths) {
+          if (fs.existsSync(p)) {
+            executablePath = p;
+            break;
+          }
+        }
+      }
+
+      if (!executablePath) {
+        throw new Error('Chromium 브라우저 실행 경로를 찾을 수 없습니다. 환경변수 PUPPETEER_EXECUTABLE_PATH를 설정해 주세요.');
+      }
+
+      const browser = await puppeteer.launch({
+        executablePath,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+        headless: true
+      });
+
+      const page = await browser.newPage();
+      await page.setContent(htmlTemplate, { waitUntil: 'networkidle0' });
+      
+      // 페이지 크기를 콘텐츠 영역에 맞춰 설정
+      const bodyHeight = await page.evaluate(() => document.body.scrollHeight);
+      const bodyWidth = await page.evaluate(() => document.body.scrollWidth);
+      
+      await page.setViewport({
+        width: Math.max(bodyWidth, 900),
+        height: Math.max(bodyHeight, 100),
+        deviceScaleFactor: 2 // 스크린샷 선명도 확보
+      });
+
+      const element = await page.$('.markdown-body');
+      let imageBuffer: Buffer;
+      if (element) {
+        imageBuffer = await element.screenshot({ type: 'png' }) as Buffer;
+      } else {
+        imageBuffer = await page.screenshot({ fullPage: true, type: 'png' }) as Buffer;
+      }
+
+      await browser.close();
+
+      await interaction.editReply({
+        content: `📋 **[${session.app_name}] 프로젝트 기획 명세서 (SPEC.md)**`,
+        files: [{
+          attachment: imageBuffer,
+          name: 'spec_sheet.png'
+        }]
+      });
+
+    } catch (error: any) {
+      console.error(error);
+      await interaction.editReply(`❌ SPEC.md 이미지 렌더링 실패: ${error.message}`);
+    }
+    return;
   }
 
   // [명령어 2] 대화 기록 한계를 깨는 무제한 기획 명세서 아카이빙
@@ -209,7 +379,7 @@ client.on('interactionCreate', async (interaction: Interaction) => {
       const changes = await generateCodeUpdate(session.spec_summary, workspaceContext, userRequest);
 
       if (changes.length === 0) {
-        await interaction.editReply('ℹ️ Ollama 분석 결과, 변경해야 할 파일이 없습니다.');
+        await interaction.editReply(`💻 **사용자 요청:** "${userRequest}"\n\nℹ️ Ollama 분석 결과, 변경해야 할 파일이 없습니다.`);
         return;
       }
 
@@ -237,14 +407,15 @@ client.on('interactionCreate', async (interaction: Interaction) => {
       }
 
       const fileListStr = updatedFiles.map(f => `- \`${f}\``).join('\n');
-      await interaction.editReply(`✅ AI 코드 자동 인젝션 완료!\n다음 파일들이 생성/수정되어 로컬 워크스페이스에 저장되었습니다:\n${fileListStr}\n\nGitHub 원격 레포지토리에 반영하려면 \`/적용\` 명령을 입력해 주세요.`);
+      await interaction.editReply(`💻 **사용자 요청:** "${userRequest}"\n\n✅ AI 코드 자동 인젝션 완료!\n다음 파일들이 생성/수정되어 로컬 워크스페이스에 저장되었습니다:\n${fileListStr}\n\nGitHub 원격 레포지토리에 반영하려면 \`/적용\` 명령을 입력해 주세요.`);
 
     } catch (error: any) {
       console.error(error);
+      const errorMsg = `💻 **사용자 요청:** "${userRequest}"\n\n❌ ChatOps 자동화 파이프라인 중단 에러: ${error.message}`;
       if (interaction.deferred) {
-        await interaction.editReply(`❌ ChatOps 자동화 파이프라인 중단 에러: ${error.message}`);
+        await interaction.editReply(errorMsg);
       } else {
-        await interaction.reply(`❌ ChatOps 자동화 파이프라인 중단 에러: ${error.message}`);
+        await interaction.reply(errorMsg);
       }
     }
   }

@@ -7,7 +7,18 @@ RUN apk add --no-cache \
     git \
     python3 \
     make \
-    g++
+    g++ \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    font-noto-cjk
+
+# Puppeteer 실행용 시스템 브라우저 환경변수 설정
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 # Git 전역 사용자 설정
 RUN git config --global user.email "hwangjae1139@gmail.com" && \

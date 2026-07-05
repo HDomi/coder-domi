@@ -122,7 +122,10 @@ const commands = [
     .setDescription('현재 가동 중인 봇의 최근 100줄 로그를 출력합니다.'),
   new SlashCommandBuilder()
     .setName('스펙')
-    .setDescription('현재 세션의 기획 명세서(SPEC.md)를 이미지 형태로 예쁘게 렌더링하여 출력합니다.')
+    .setDescription('현재 세션의 기획 명세서(SPEC.md)를 이미지 형태로 예쁘게 렌더링하여 출력합니다.'),
+  new SlashCommandBuilder()
+    .setName('연결끊기')
+    .setDescription('현재 채널의 활성화된 개발 세션 연결을 해제합니다. (로컬 파일 및 GitHub 레포는 안전하게 보존됩니다.)')
 ].map(command => command.toJSON());
 
 client.once('ready', async (readyClient) => {
@@ -210,6 +213,17 @@ client.on('interactionCreate', async (interaction: Interaction) => {
       content: '❌ 활성화된 개발 세션이 없습니다. 먼저 `/연결 [앱이름]` 명령어로 채널을 연결해 주세요.',
       ephemeral: true
     });
+  }
+
+  // [추가] 가상 개발 세션 연결 끊기
+  if (commandName === '연결끊기') {
+    try {
+      dbManager.deleteSession(channelId);
+      return interaction.reply(`✅ [${session.app_name}] 프로젝트와의 개발 세션 연결이 성공적으로 해제되었습니다.\n(참고: 로컬 디렉토리 파일 및 GitHub 원격 레포지토리는 안전하게 보존되었습니다.)`);
+    } catch (error: any) {
+      console.error(error);
+      return interaction.reply(`❌ 개발 세션 연결 해제 중 오류가 발생했습니다: ${error.message}`);
+    }
   }
 
   // [추가] SPEC.md 이미지 렌더링 출력

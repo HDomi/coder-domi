@@ -197,10 +197,7 @@ jobs:
     fs.writeFileSync(workflowPath, workflowContent, "utf-8");
   }
 
-  // 1. Push code to GitHub
-  const repoUrl = await setupAndPushRepo(projectPath, appName, gitToken);
-
-  // 2. Fetch authenticated username
+  // 1. Fetch authenticated username
   const userResponse = await fetch("https://api.github.com/user", {
     headers: {
       Authorization: `Bearer ${gitToken}`,
@@ -220,7 +217,46 @@ jobs:
   const userData = (await userResponse.json()) as GitHubUser;
   const username = userData.login;
 
-  // 3. Configure GitHub Pages to use GitHub Actions workflow
+  // 2. Check repository existence, create with auto_init: true if missing to allow Pages creation before first push
+  const repoResponse = await fetch(
+    `https://api.github.com/repos/${username}/${appName}`,
+    {
+      headers: {
+        Authorization: `Bearer ${gitToken}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "coder-domi-bot",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    },
+  );
+
+  if (repoResponse.status === 404) {
+    console.log(`Repository ${appName} does not exist. Creating with auto_init: true...`);
+    const createResponse = await fetch("https://api.github.com/user/repos", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${gitToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github+json",
+        "User-Agent": "coder-domi-bot",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify({
+        name: appName,
+        private: false,
+        auto_init: true, // Create initial commit (e.g. README.md)
+      }),
+    });
+
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
+      throw new Error(
+        `GitHub 레포지토리 생성 실패: ${createResponse.statusText} (${errorText})`,
+      );
+    }
+  }
+
+  // 3. Configure GitHub Pages to use GitHub Actions workflow BEFORE pushing code
   const pagesUrlCheck = `https://api.github.com/repos/${username}/${appName}/pages`;
   const pagesResponse = await fetch(pagesUrlCheck, {
     headers: {
@@ -258,6 +294,9 @@ jobs:
       console.log("GitHub Pages 활성화 완료!");
     }
   }
+
+  // 4. Push code to GitHub (which will force push and overwrite the auto_init commit, triggering Actions)
+  const repoUrl = await setupAndPushRepo(projectPath, appName, gitToken);
 
   return {
     repoUrl,

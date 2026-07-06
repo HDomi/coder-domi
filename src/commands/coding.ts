@@ -83,8 +83,11 @@ export const coding: Command = {
         `💻 **사용자 요청:** "${userRequest}"\n\n✅ AI 코드 자동 인젝션 완료!\n다음 파일들이 생성/수정되어 로컬 워크스페이스에 저장되었습니다:\n${fileListStr}\n\nGitHub 원격 레포지토리에 반영하려면 \`/적용\` 명령을 입력해 주세요.`,
       );
     } catch (error: any) {
-      console.error(error);
-      const errorMsg = `💻 **사용자 요청:** "${userRequest}"\n\n❌ ChatOps 자동화 파이프라인 중단 에러: ${error.message}`;
+      console.error("❌ [Coding Command Error]", error);
+      let errorMsg = `💻 **사용자 요청:** "${userRequest}"\n\n❌ ChatOps 자동화 파이프라인 중단 에러: ${error.message}`;
+      if (errorMsg.length > 2000) {
+        errorMsg = errorMsg.substring(0, 1950) + "\n... (응답이 너무 길어 생략되었습니다. 자세한 오류 정보는 서버 콘솔 로그를 확인해 주세요.)";
+      }
       if (interaction.deferred) {
         await interaction.editReply(errorMsg);
       } else {

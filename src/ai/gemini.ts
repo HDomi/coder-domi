@@ -133,7 +133,8 @@ ${userRequest}
       }
       throw new Error("JSON 응답 내 'changes' 배열을 찾을 수 없습니다.");
     } catch (e: any) {
-      throw new Error(`Gemini 응답 파싱 에러: ${e.message}\n원본 내용: ${text}`);
+      console.error("❌ Gemini 파싱 실패 원본 내용:", text);
+      throw new Error(`Gemini 응답 파싱 에러: ${e.message}`);
     }
   } else {
     throw new Error("Gemini로부터 빈 응답을 받았습니다.");

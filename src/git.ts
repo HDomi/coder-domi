@@ -172,6 +172,8 @@ jobs:
         run: |
           if [ -d dist ]; then
             echo "dir=dist" >> $GITHUB_OUTPUT
+          elif [ -d .output/public ]; then
+            echo "dir=.output/public" >> $GITHUB_OUTPUT
           elif [ -d build ]; then
             echo "dir=build" >> $GITHUB_OUTPUT
           elif [ -d out ]; then
@@ -179,6 +181,17 @@ jobs:
           else
             echo "dir=." >> $GITHUB_OUTPUT
           fi
+
+      - name: Clean up unneeded directories if deploying root
+        if: \${{ steps.determine_dir.outputs.dir == '.' }}
+        run: |
+          rm -rf node_modules
+          rm -rf .git
+        continue-on-error: true
+
+      - name: Create .nojekyll
+        run: touch \${{ steps.determine_dir.outputs.dir }}/.nojekyll
+        continue-on-error: true
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

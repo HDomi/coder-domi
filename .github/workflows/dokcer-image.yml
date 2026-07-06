@@ -85,6 +85,8 @@ jobs:
             -e CLIENT_ID='${{ secrets.CLIENT_ID }}' \
             -e AI_API_URL='${{ secrets.AI_API_URL }}' \
             -e GIT_TOKEN='${{ secrets.GIT_TOKEN }}' \
+            -e LOCAL_MODE='${{ secrets.LOCAL_MODE }}' \
+            -e GEMINI_API_KEY='${{ secrets.GEMINI_API_KEY }}' \
             "$APP_NAME:latest"
 
           EOF

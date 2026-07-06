@@ -2,7 +2,7 @@ import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import * as fs from "fs";
 import * as path from "path";
 import { Session } from "../db";
-import { generateCodeUpdate } from "../ollama";
+import { generateCodeUpdate } from "../ai";
 import { getWorkspaceContext } from "../utils";
 import { Command } from "../types";
 
@@ -10,7 +10,7 @@ export const coding: Command = {
   data: new SlashCommandBuilder()
     .setName("코딩")
     .setDescription(
-      "Ollama를 통해 기획 명세 및 대화 내용을 분석해 자동으로 파일을 생성/수정합니다.",
+      "AI를 통해 기획 명세 및 대화 내용을 분석해 자동으로 파일을 생성/수정합니다.",
     )
     .addStringOption((option) =>
       option

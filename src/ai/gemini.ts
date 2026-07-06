@@ -39,7 +39,7 @@ ${userRequest}
 위 정보를 바탕으로, 이번 요청을 수행하기 위해 읽거나 수정해야 하는 파일 목록(JSON)을 작성해라.
 `;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -96,7 +96,7 @@ ${userRequest}
 위 기획서와 워크스페이스 상태를 분석하고, 사용자의 코딩 요청을 완벽하게 반영한 파일 변경사항(JSON)을 생성해라.
 `;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

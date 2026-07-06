@@ -1,6 +1,25 @@
 import { FileChange } from "./types";
 import { systemPromptSelect, systemPromptUpdate } from "./ollama";
 
+async function logAvailableModels(apiKey: string) {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+    );
+    if (response.ok) {
+      const data = (await response.json()) as any;
+      const modelNames = data.models?.map((m: any) => m.name) || [];
+      console.warn("💡 [Gemini API] 사용 가능한 모델 목록:", modelNames);
+    } else {
+      console.warn(
+        `⚠️ [Gemini API] 모델 목록 조회 API 응답 실패: ${response.status} (${response.statusText})`,
+      );
+    }
+  } catch (e: any) {
+    console.error("⚠️ [Gemini API] 모델 목록 조회 예외 발생:", e.message);
+  }
+}
+
 export async function selectRelevantFilesGemini(
   apiKey: string,
   spec: string,
@@ -43,6 +62,7 @@ ${userRequest}
 
   if (!response.ok) {
     const errorText = await response.text();
+    await logAvailableModels(apiKey);
     throw new Error(`Gemini 1단계 API 호출 실패: ${response.statusText} (${errorText})`);
   }
 
@@ -99,6 +119,7 @@ ${userRequest}
 
   if (!response.ok) {
     const errorText = await response.text();
+    await logAvailableModels(apiKey);
     throw new Error(`Gemini API 호출 실패: ${response.statusText} (${errorText})`);
   }
 

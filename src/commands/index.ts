@@ -7,6 +7,7 @@ import { deleteApp } from "./deleteApp";
 import { logs } from "./logs";
 import { spec } from "./spec";
 import { deploy } from "./deploy";
+import { uptime } from "./uptime";
 import { Command } from "../types";
 
 export const commands: Command[] = [
@@ -19,4 +20,5 @@ export const commands: Command[] = [
   logs,
   spec,
   deploy,
+  uptime,
 ];

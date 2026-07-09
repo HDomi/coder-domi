@@ -113,6 +113,9 @@ export function executeShellCommand(
       }
     });
 
+    // 표준 입력을 즉시 닫아 대화형 프롬프트가 대기하지 않고 즉시 종료/실패하도록 방어
+    child.stdin?.end();
+
     if (child.stdout) {
       child.stdout.on("data", (data) =>
         console.log(`[쉘-표준출력] ${data.toString().trim()}`),

@@ -16,9 +16,6 @@ RUN apk add --no-cache \
     ttf-freefont \
     font-noto-cjk
 
-# npm 최신버전 전역 설치 및 확인
-RUN npm install -g npm@latest
-
 # Puppeteer 실행용 시스템 브라우저 환경변수 설정
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true

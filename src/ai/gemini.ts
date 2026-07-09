@@ -25,6 +25,7 @@ export async function selectRelevantFilesGemini(
   spec: string,
   filePaths: string[],
   userRequest: string,
+  abortSignal?: AbortSignal,
 ): Promise<Phase1Result> {
   const userPrompt = `
 [기획 명세서]
@@ -57,7 +58,8 @@ ${userRequest}
         responseMimeType: "application/json",
         temperature: 0.0
       }
-    })
+    }),
+    signal: abortSignal,
   });
 
   if (!response.ok) {
@@ -85,6 +87,7 @@ export async function generateCodeUpdateGemini(
   spec: string,
   prunedFiles: { path: string; content: string }[],
   userRequest: string,
+  abortSignal?: AbortSignal,
 ): Promise<Phase2Result> {
   const userPrompt = `
 [기획 명세서 (전체 누적 요건)]
@@ -117,7 +120,8 @@ ${userRequest}
         responseMimeType: "application/json",
         temperature: 0.1
       }
-    })
+    }),
+    signal: abortSignal,
   });
 
   if (!response.ok) {

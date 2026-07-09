@@ -1,8 +1,7 @@
 import { CodeUpdateResult, Phase1Result, Phase2Result } from "./types";
 import { selectRelevantFilesOllama, generateCodeUpdateOllama } from "./ollama";
 import { selectRelevantFilesGemini, generateCodeUpdateGemini } from "./gemini";
-import { getWorkspaceContext } from "../utils";
-import { execSync } from "child_process";
+import { getWorkspaceContext, executeShellCommand } from "../utils";
 
 export * from "./types";
 
@@ -11,6 +10,7 @@ export async function generateCodeUpdate(
   projectPath: string,
   userRequest: string,
   localModelOverride?: boolean,
+  abortSignal?: AbortSignal,
 ): Promise<CodeUpdateResult> {
   const isLocalMode = localModelOverride !== undefined ? localModelOverride : (process.env.LOCAL_MODE === "true");
   const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -42,6 +42,7 @@ export async function generateCodeUpdate(
         spec,
         allPaths,
         userRequest,
+        abortSignal,
       );
     } else {
       phase1Result = await selectRelevantFilesGemini(
@@ -49,6 +50,7 @@ export async function generateCodeUpdate(
         spec,
         allPaths,
         userRequest,
+        abortSignal,
       );
     }
   } catch (error) {
@@ -63,10 +65,13 @@ export async function generateCodeUpdate(
     for (const cmd of phase1Result.setupCommands) {
       try {
         console.log(`[Phase 1 Setup] Executing: ${cmd}`);
-        execSync(cmd, { cwd: projectPath, shell: "/bin/bash", stdio: "inherit" });
+        await executeShellCommand(cmd, projectPath, abortSignal);
         runSetupCommands.push(cmd);
       } catch (err: any) {
         console.error(`❌ [Phase 1 Setup Error] 명령어 실행 실패: ${cmd}`, err.message);
+        if (abortSignal?.aborted) {
+          throw new Error("작업이 사용자에 의해 중단되었습니다.");
+        }
       }
     }
     // 명령어 실행 후 파일 구조 변경 가능성이 있으므로 워크스페이스 컨텍스트 재로드
@@ -108,13 +113,14 @@ export async function generateCodeUpdate(
   if (useLocal) {
     const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
     const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
-    phase2Result = await generateCodeUpdateOllama(cleanUrl, spec, prunedFiles, userRequest);
+    phase2Result = await generateCodeUpdateOllama(cleanUrl, spec, prunedFiles, userRequest, abortSignal);
   } else {
     phase2Result = await generateCodeUpdateGemini(
       geminiApiKey!,
       spec,
       prunedFiles,
       userRequest,
+      abortSignal,
     );
   }
 

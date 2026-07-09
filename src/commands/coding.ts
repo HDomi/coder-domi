@@ -17,8 +17,8 @@ export const coding: Command = {
     )
     .addBooleanOption((option) =>
       option
-        .setName("로컬모델사용")
-        .setDescription("로컬 모델(Ollama) 사용 여부 (True: Ollama, False: Gemini)")
+        .setName("gemini사용")
+        .setDescription("Gemini 모델 사용 여부 (True: Gemini, False: Ollama (로컬 기본값))")
         .setRequired(false),
     ),
   requiresSession: true,
@@ -26,14 +26,17 @@ export const coding: Command = {
   async execute(interaction: ChatInputCommandInteraction, session?: Session) {
     const currentSession = session!;
     const userRequest = interaction.options.getString("요청", true).trim();
-    const localModelOpt = interaction.options.getBoolean("로컬모델사용");
+    const useGemini = interaction.options.getBoolean("gemini사용");
+    
+    // 기본값은 로컬 모델(Ollama) 사용이므로, gemini사용이 true가 아니면 localModelOpt = true
+    const localModelOpt = useGemini === true ? false : true;
 
     // 큐 매니저에 작업을 위임합니다.
     // 즉시 Embed 메시지로 응답하므로 deferReply()가 불필요합니다.
     await queueManager.enqueue(
       interaction.channelId,
       userRequest,
-      localModelOpt !== null ? localModelOpt : undefined,
+      localModelOpt,
       currentSession,
       interaction,
     );

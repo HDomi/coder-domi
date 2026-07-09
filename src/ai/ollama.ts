@@ -54,6 +54,7 @@ export async function selectRelevantFilesOllama(
   spec: string,
   filePaths: string[],
   userRequest: string,
+  abortSignal?: AbortSignal,
 ): Promise<Phase1Result> {
   const userPrompt = `
 [기획 명세서]
@@ -68,6 +69,18 @@ ${userRequest}
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 300000); // 5분
+
+  if (abortSignal) {
+    if (abortSignal.aborted) {
+      controller.abort();
+    } else {
+      const onAbort = () => controller.abort();
+      abortSignal.addEventListener("abort", onAbort);
+      controller.signal.addEventListener("abort", () => {
+        abortSignal.removeEventListener("abort", onAbort);
+      });
+    }
+  }
 
   try {
     const response = await fetch(`${aiApiUrl}/api/chat`, {
@@ -115,6 +128,7 @@ export async function generateCodeUpdateOllama(
   spec: string,
   prunedFiles: { path: string; content: string }[],
   userRequest: string,
+  abortSignal?: AbortSignal,
 ): Promise<Phase2Result> {
   const userPrompt = `
 [기획 명세서 (전체 누적 요건)]
@@ -129,6 +143,18 @@ ${userRequest}
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 1800000); // 30분
+
+  if (abortSignal) {
+    if (abortSignal.aborted) {
+      controller.abort();
+    } else {
+      const onAbort = () => controller.abort();
+      abortSignal.addEventListener("abort", onAbort);
+      controller.signal.addEventListener("abort", () => {
+        abortSignal.removeEventListener("abort", onAbort);
+      });
+    }
+  }
 
   try {
     const response = await fetch(`${aiApiUrl}/api/chat`, {

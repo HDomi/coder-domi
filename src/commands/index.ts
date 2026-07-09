@@ -8,6 +8,7 @@ import { logs } from "./logs";
 import { spec } from "./spec";
 import { deploy } from "./deploy";
 import { uptime } from "./uptime";
+import { forceStop } from "./forceStop";
 import { Command } from "../types";
 
 export const commands: Command[] = [
@@ -21,4 +22,5 @@ export const commands: Command[] = [
   spec,
   deploy,
   uptime,
+  forceStop,
 ];

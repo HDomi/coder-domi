@@ -4,10 +4,9 @@ import {
 } from "discord.js";
 import * as fs from "fs";
 import * as path from "path";
-import { execSync } from "child_process";
 import { Session } from "./db";
 import { generateCodeUpdate, ExecuteCommand } from "./ai";
-import { getWorkspaceContext } from "./utils";
+import { getWorkspaceContext, executeShellCommand } from "./utils";
 
 // ─── 큐 아이템 상태 정의 ───
 type QueueItemStatus = "waiting" | "processing" | "done" | "error";
@@ -26,6 +25,7 @@ export interface QueueItem {
   resultFiles?: string[];
   executedCommands?: ExecuteCommand[];
   resultDesc?: string;
+  abortController?: AbortController;
   errorMessage?: string;
 }
 
@@ -72,6 +72,51 @@ class QueueManager {
 
     // 큐 프로세서 가동 (이미 돌고 있으면 무시)
     this.processQueue(channelId);
+  }
+
+  /**
+   * 현재 채널의 대기열 작업을 즉시 강제 종료하고 대기열을 비웁니다.
+   */
+  public forceStop(channelId: string): {
+    success: boolean;
+    runningCancelled: boolean;
+    cancelledCount: number;
+    runningRequest?: string;
+  } {
+    const queue = this.queues.get(channelId);
+    if (!queue || queue.length === 0) {
+      return { success: false, runningCancelled: false, cancelledCount: 0 };
+    }
+
+    const runningItem = queue.find((item) => item.status === "processing");
+    const cancelledCount = queue.filter((item) => item.status === "waiting").length;
+
+    let runningCancelled = false;
+    let runningRequest: string | undefined;
+
+    if (runningItem) {
+      runningCancelled = true;
+      runningRequest = runningItem.userRequest;
+      // LLM 호출 및 쉘 명령어 실행 Abort
+      runningItem.abortController?.abort();
+
+      // 실행 중이던 아이템에 강제 종료 상태 표시
+      runningItem.status = "error";
+      runningItem.completedAt = Date.now();
+      runningItem.errorMessage = "사용자에 의해 강제 종료되었습니다.";
+    }
+
+    // 대기열 비우기 (splice를 통해 기존 배열 참조를 비워서 루프가 즉시 종료되도록 처리)
+    queue.splice(0, queue.length);
+    this.processing.set(channelId, false);
+    this.stopLiveUpdate(channelId);
+
+    return {
+      success: true,
+      runningCancelled,
+      cancelledCount,
+      runningRequest,
+    };
   }
 
   /**
@@ -123,6 +168,9 @@ class QueueManager {
    * 실제 AI 코드 생성 및 파일 쓰기를 수행합니다.
    */
   private async executeTask(item: QueueItem): Promise<void> {
+    const controller = new AbortController();
+    item.abortController = controller;
+
     try {
       // 1단계(및 setupCommands 자동 실행)와 2단계를 일괄 수행합니다.
       const result = await generateCodeUpdate(
@@ -130,6 +178,7 @@ class QueueManager {
         item.session.project_path,
         item.userRequest,
         item.localModelOpt,
+        controller.signal,
       );
 
       const executedCommands: ExecuteCommand[] = [];
@@ -145,12 +194,11 @@ class QueueManager {
       if (result.execute && result.execute.length > 0) {
         console.log(`[Queue Task] Running ${result.execute.length} execution commands...`);
         for (const execObj of result.execute) {
+          if (controller.signal.aborted) {
+            throw new Error("사용자에 의해 강제 종료되었습니다.");
+          }
           console.log(`[Queue Task] Executing bash command: ${execObj.cmd}`);
-          execSync(execObj.cmd, {
-            cwd: item.session.project_path,
-            shell: "/bin/bash",
-            stdio: "inherit",
-          });
+          await executeShellCommand(execObj.cmd, item.session.project_path, controller.signal);
           executedCommands.push(execObj);
         }
       }

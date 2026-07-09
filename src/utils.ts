@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { exec } from "child_process";
 
 // 미니 PC 인프라 내에서 대상 타겟 코드가 동기화되어 움직일 워크스페이스 정의
 export const WORKSPACE_DIR = path.resolve(
@@ -94,4 +95,27 @@ export function getPuppeteerExecutablePath(): string {
   }
 
   return executablePath;
+}
+
+export function executeShellCommand(
+  cmd: string,
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = exec(cmd, { cwd, shell: "/bin/bash", signal }, (error) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    });
+
+    if (child.stdout) {
+      child.stdout.on("data", (data) => console.log(`[shell-stdout] ${data.toString().trim()}`));
+    }
+    if (child.stderr) {
+      child.stderr.on("data", (data) => console.error(`[shell-stderr] ${data.toString().trim()}`));
+    }
+  });
 }

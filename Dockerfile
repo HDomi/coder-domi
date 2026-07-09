@@ -14,7 +14,8 @@ RUN apk add --no-cache \
     harfbuzz \
     ca-certificates \
     ttf-freefont \
-    font-noto-cjk
+    font-noto-cjk \
+    bash
 
 # Puppeteer 실행용 시스템 브라우저 환경변수 설정
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser

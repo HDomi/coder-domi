@@ -13,7 +13,8 @@
     "dotenv": "^16.4.5",
     "better-sqlite3": "^11.8.0",
     "marked": "^12.0.1",
-    "puppeteer-core": "^22.6.0"
+    "puppeteer-core": "^22.6.0",
+    "undici": "^6.19.2"
   },
   "devDependencies": {
     "ts-node": "^10.9.2",

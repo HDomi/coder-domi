@@ -1,15 +1,17 @@
-import { FileChange } from "./types";
+import { CodeUpdateResult, Phase1Result, Phase2Result } from "./types";
 import { selectRelevantFilesOllama, generateCodeUpdateOllama } from "./ollama";
 import { selectRelevantFilesGemini, generateCodeUpdateGemini } from "./gemini";
+import { getWorkspaceContext } from "../utils";
+import { execSync } from "child_process";
 
 export * from "./types";
 
 export async function generateCodeUpdate(
   spec: string,
-  workspaceContext: { files: { path: string; content: string }[] },
+  projectPath: string,
   userRequest: string,
   localModelOverride?: boolean,
-): Promise<FileChange[]> {
+): Promise<CodeUpdateResult> {
   const isLocalMode = localModelOverride !== undefined ? localModelOverride : (process.env.LOCAL_MODE === "true");
   const geminiApiKey = process.env.GEMINI_API_KEY;
 
@@ -20,11 +22,13 @@ export async function generateCodeUpdate(
     );
   }
 
-  const allPaths = workspaceContext.files.map((f) => f.path);
-  let selectedPaths: string[] = [];
+  // 1단계: 초기 파일 목록 획득 및 분석 시작
+  let workspaceContext = getWorkspaceContext(projectPath);
+  let allPaths = workspaceContext.files.map((f) => f.path);
+  let phase1Result: Phase1Result = { relevantFiles: [] };
 
   console.log(
-    `[Prompt Diet] 1단계: 의존 파일 선별 분석 시작... (전체 파일 수: ${
+    `[Prompt Diet] 1단계: 의존 파일 선별 및 초기화 분석 시작... (전체 파일 수: ${
       workspaceContext.files.length
     }개 / 모드: ${useLocal ? "Ollama" : "Gemini"})`,
   );
@@ -33,14 +37,14 @@ export async function generateCodeUpdate(
     if (useLocal) {
       const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
       const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
-      selectedPaths = await selectRelevantFilesOllama(
+      phase1Result = await selectRelevantFilesOllama(
         cleanUrl,
         spec,
         allPaths,
         userRequest,
       );
     } else {
-      selectedPaths = await selectRelevantFilesGemini(
+      phase1Result = await selectRelevantFilesGemini(
         geminiApiKey!,
         spec,
         allPaths,
@@ -48,12 +52,29 @@ export async function generateCodeUpdate(
       );
     }
   } catch (error) {
-    console.warn(
-      "⚠️ 1단계 파일 선별 도중 에러가 발생하여 전체 파일을 보냅니다:",
-      error,
-    );
-    selectedPaths = allPaths;
+    console.warn("⚠️ 1단계 파일 선별 도중 에러가 발생했습니다:", error);
+    phase1Result = { relevantFiles: allPaths };
   }
+
+  // 1.5단계: 1단계에서 반환된 setupCommands 즉시 실행
+  const runSetupCommands: string[] = [];
+  if (phase1Result.setupCommands && phase1Result.setupCommands.length > 0) {
+    console.log(`[Phase 1 Setup] 실행할 초기화 명령어 발견: ${phase1Result.setupCommands.length}개`);
+    for (const cmd of phase1Result.setupCommands) {
+      try {
+        console.log(`[Phase 1 Setup] Executing: ${cmd}`);
+        execSync(cmd, { cwd: projectPath, shell: "/bin/bash", stdio: "inherit" });
+        runSetupCommands.push(cmd);
+      } catch (err: any) {
+        console.error(`❌ [Phase 1 Setup Error] 명령어 실행 실패: ${cmd}`, err.message);
+      }
+    }
+    // 명령어 실행 후 파일 구조 변경 가능성이 있으므로 워크스페이스 컨텍스트 재로드
+    workspaceContext = getWorkspaceContext(projectPath);
+    allPaths = workspaceContext.files.map((f) => f.path);
+  }
+
+  const selectedPaths = phase1Result.relevantFiles;
 
   // 선별된 파일들을 기반으로 새로운 정제 컨텍스트 구성
   const selectedPathsSet = new Set(selectedPaths);
@@ -82,16 +103,25 @@ export async function generateCodeUpdate(
       .join("\n")}`,
   );
 
+  let phase2Result: Phase2Result = { execute: [] };
+
   if (useLocal) {
     const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
     const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
-    return generateCodeUpdateOllama(cleanUrl, spec, prunedFiles, userRequest);
+    phase2Result = await generateCodeUpdateOllama(cleanUrl, spec, prunedFiles, userRequest);
   } else {
-    return generateCodeUpdateGemini(
+    phase2Result = await generateCodeUpdateGemini(
       geminiApiKey!,
       spec,
       prunedFiles,
       userRequest,
     );
   }
+
+  return {
+    setupCommands: runSetupCommands,
+    relevantFiles: selectedPaths,
+    execute: phase2Result.execute,
+    desc: phase2Result.desc,
+  };
 }

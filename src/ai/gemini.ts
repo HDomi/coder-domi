@@ -1,4 +1,4 @@
-import { FileChange } from "./types";
+import { Phase1Result, Phase2Result } from "./types";
 import { systemPromptSelect, systemPromptUpdate } from "./ollama";
 
 async function logAvailableModels(apiKey: string) {
@@ -25,7 +25,7 @@ export async function selectRelevantFilesGemini(
   spec: string,
   filePaths: string[],
   userRequest: string,
-): Promise<string[]> {
+): Promise<Phase1Result> {
   const userPrompt = `
 [기획 명세서]
 ${spec}
@@ -70,11 +70,14 @@ ${userRequest}
   const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
   if (text) {
     const parsed = JSON.parse(text.trim());
-    if (parsed && Array.isArray(parsed.relevantFiles)) {
-      return parsed.relevantFiles as string[];
+    if (parsed) {
+      return {
+        setupCommands: Array.isArray(parsed.setupCommands) ? parsed.setupCommands : [],
+        relevantFiles: Array.isArray(parsed.relevantFiles) ? parsed.relevantFiles : [],
+      };
     }
   }
-  return [];
+  return { relevantFiles: [] };
 }
 
 export async function generateCodeUpdateGemini(
@@ -82,7 +85,7 @@ export async function generateCodeUpdateGemini(
   spec: string,
   prunedFiles: { path: string; content: string }[],
   userRequest: string,
-): Promise<FileChange[]> {
+): Promise<Phase2Result> {
   const userPrompt = `
 [기획 명세서 (전체 누적 요건)]
 ${spec}
@@ -128,10 +131,13 @@ ${userRequest}
   if (text) {
     try {
       const parsed = JSON.parse(text.trim());
-      if (parsed && Array.isArray(parsed.changes)) {
-        return parsed.changes as FileChange[];
+      if (parsed && Array.isArray(parsed.execute)) {
+        return {
+          execute: parsed.execute,
+          desc: parsed.desc,
+        };
       }
-      throw new Error("JSON 응답 내 'changes' 배열을 찾을 수 없습니다.");
+      throw new Error("JSON 응답 내 'execute' 배열을 찾을 수 없습니다.");
     } catch (e: any) {
       console.error("❌ Gemini 파싱 실패 원본 내용:", text);
       throw new Error(`Gemini 응답 파싱 에러: ${e.message}`);

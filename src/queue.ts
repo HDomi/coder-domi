@@ -4,8 +4,9 @@ import {
 } from "discord.js";
 import * as fs from "fs";
 import * as path from "path";
+import { execSync } from "child_process";
 import { Session } from "./db";
-import { generateCodeUpdate } from "./ai";
+import { generateCodeUpdate, ExecuteCommand } from "./ai";
 import { getWorkspaceContext } from "./utils";
 
 // ─── 큐 아이템 상태 정의 ───
@@ -23,6 +24,8 @@ export interface QueueItem {
   startedAt?: number;
   completedAt?: number;
   resultFiles?: string[];
+  executedCommands?: ExecuteCommand[];
+  resultDesc?: string;
   errorMessage?: string;
 }
 
@@ -121,47 +124,41 @@ class QueueManager {
    */
   private async executeTask(item: QueueItem): Promise<void> {
     try {
-      const workspaceContext = getWorkspaceContext(item.session.project_path);
-
-      const changes = await generateCodeUpdate(
+      // 1단계(및 setupCommands 자동 실행)와 2단계를 일괄 수행합니다.
+      const result = await generateCodeUpdate(
         item.session.spec_summary,
-        workspaceContext,
+        item.session.project_path,
         item.userRequest,
         item.localModelOpt,
       );
 
-      if (changes.length === 0) {
-        item.status = "done";
-        item.completedAt = Date.now();
-        item.resultFiles = [];
-        return;
+      const executedCommands: ExecuteCommand[] = [];
+
+      // 1단계 사전 실행 명령어 기록
+      if (result.setupCommands && result.setupCommands.length > 0) {
+        for (const cmd of result.setupCommands) {
+          executedCommands.push({ cmd, desc: "사전 설정 명령어" });
+        }
       }
 
-      const updatedFiles: string[] = [];
-
-      for (const change of changes) {
-        const targetPath = path.resolve(item.session.project_path, change.path);
-
-        // 경로 이탈 보안 방지
-        if (!targetPath.startsWith(item.session.project_path)) {
-          console.warn(
-            `[Security Warning] Blocked file write attempt outside workspace: ${change.path}`,
-          );
-          continue;
+      // 2단계 실행 명령어를 /bin/bash 환경에서 순차 실행
+      if (result.execute && result.execute.length > 0) {
+        console.log(`[Queue Task] Running ${result.execute.length} execution commands...`);
+        for (const execObj of result.execute) {
+          console.log(`[Queue Task] Executing bash command: ${execObj.cmd}`);
+          execSync(execObj.cmd, {
+            cwd: item.session.project_path,
+            shell: "/bin/bash",
+            stdio: "inherit",
+          });
+          executedCommands.push(execObj);
         }
-
-        const dirPath = path.dirname(targetPath);
-        if (!fs.existsSync(dirPath)) {
-          fs.mkdirSync(dirPath, { recursive: true });
-        }
-
-        fs.writeFileSync(targetPath, change.content, "utf-8");
-        updatedFiles.push(change.path);
       }
 
       item.status = "done";
       item.completedAt = Date.now();
-      item.resultFiles = updatedFiles;
+      item.executedCommands = executedCommands;
+      item.resultDesc = result.desc;
     } catch (error: any) {
       console.error("❌ [Queue Task Error]", error);
       item.status = "error";
@@ -283,45 +280,39 @@ class QueueManager {
         const totalTime =
           (item.completedAt || Date.now()) - (item.startedAt || item.enqueuedAt);
 
-        if (item.resultFiles && item.resultFiles.length > 0) {
-          const fileListStr = item.resultFiles
-            .map((f) => `\`${f}\``)
+        const fields = [];
+
+        if (item.executedCommands && item.executedCommands.length > 0) {
+          const cmdListStr = item.executedCommands
+            .map((c) => `\`${c.cmd}\` ${c.desc ? `(${c.desc})` : ""}`)
             .join("\n");
-          embed
-            .setTitle("✅ 코드 자동 인젝션 완료!")
-            .setDescription(`**요청:** ${item.userRequest}`)
-            .setColor(0x2ecc71) // 초록색
-            .addFields(
-              {
-                name: "📂 수정된 파일",
-                value: fileListStr,
-                inline: false,
-              },
-              {
-                name: "⏱️ 소요 시간",
-                value: this.formatElapsed(totalTime),
-                inline: true,
-              },
-            )
-            .setFooter({
-              text: `작업 ID: #${item.id} · /적용 으로 GitHub에 반영`,
-            })
-            .setTimestamp();
-        } else {
-          embed
-            .setTitle("ℹ️ 변경 사항 없음")
-            .setDescription(
-              `**요청:** ${item.userRequest}\n\nAI 분석 결과, 변경해야 할 파일이 없습니다.`,
-            )
-            .setColor(0x95a5a6) // 회색
-            .addFields({
-              name: "⏱️ 소요 시간",
-              value: this.formatElapsed(totalTime),
-              inline: true,
-            })
-            .setFooter({ text: `작업 ID: #${item.id}` })
-            .setTimestamp();
+          fields.push({
+            name: "💻 실행된 명령어",
+            value: cmdListStr.length > 1024 ? cmdListStr.substring(0, 1000) + "\n... (생략됨)" : cmdListStr,
+            inline: false,
+          });
         }
+
+        fields.push({
+          name: "⏱️ 소요 시간",
+          value: this.formatElapsed(totalTime),
+          inline: true,
+        });
+
+        // 결과 요약 설명 자연어로 최종 보고
+        const descriptionText = item.resultDesc
+          ? `${item.resultDesc}`
+          : `**요청:** ${item.userRequest}\n\n작업이 성공적으로 수행되었습니다.`;
+
+        embed
+          .setTitle("✅ 작업 완료!")
+          .setDescription(descriptionText)
+          .setColor(0x2ecc71) // 초록색
+          .addFields(fields)
+          .setFooter({
+            text: `작업 ID: #${item.id} · /적용 으로 GitHub에 반영`,
+          })
+          .setTimestamp();
         break;
       }
 

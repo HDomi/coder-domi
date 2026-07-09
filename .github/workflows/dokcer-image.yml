@@ -79,7 +79,7 @@ jobs:
             --restart unless-stopped \
             --name "$APP_NAME" \
             -p "$APP_PORT:$APP_PORT" \
-            -v "$APP_DIR/workspace:/root/discord-coder-domi/workspace" \
+            -v "/home/domi/coder-domi-storage/workspace:/root/coder-domi-storage/workspace" \
             -v "$APP_DIR/chatops.db:/usr/src/app/chatops.db" \
             -e DISCORD_TOKEN='${{ secrets.DISCORD_TOKEN }}' \
             -e CLIENT_ID='${{ secrets.CLIENT_ID }}' \

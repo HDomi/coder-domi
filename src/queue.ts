@@ -15,7 +15,6 @@ export interface QueueItem {
   id: number;
   channelId: string;
   userRequest: string;
-  localModelOpt?: boolean;
   session: Session;
   interaction: ChatInputCommandInteraction;
   status: QueueItemStatus;
@@ -46,7 +45,6 @@ class QueueManager {
   async enqueue(
     channelId: string,
     userRequest: string,
-    localModelOpt: boolean | undefined,
     session: Session,
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
@@ -54,7 +52,6 @@ class QueueManager {
       id: ++this.idCounter,
       channelId,
       userRequest,
-      localModelOpt: localModelOpt !== null ? localModelOpt : undefined,
       session,
       interaction,
       status: "waiting",
@@ -177,7 +174,6 @@ class QueueManager {
         item.session.spec_summary,
         item.session.project_path,
         item.userRequest,
-        item.localModelOpt,
         controller.signal,
       );
 

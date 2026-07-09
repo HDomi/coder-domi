@@ -1,6 +1,5 @@
 import { CodeUpdateResult, Phase1Result, Phase2Result } from "./types";
 import { selectRelevantFilesOllama, generateCodeUpdateOllama } from "./ollama";
-import { selectRelevantFilesGemini, generateCodeUpdateGemini } from "./gemini";
 import { getWorkspaceContext, executeShellCommand } from "../utils";
 
 export * from "./types";
@@ -9,50 +8,27 @@ export async function generateCodeUpdate(
   spec: string,
   projectPath: string,
   userRequest: string,
-  localModelOverride?: boolean,
   abortSignal?: AbortSignal,
 ): Promise<CodeUpdateResult> {
-  const isLocalMode = localModelOverride !== undefined ? localModelOverride : (process.env.LOCAL_MODE === "true");
-  const geminiApiKey = process.env.GEMINI_API_KEY;
-
-  const useLocal = isLocalMode || !geminiApiKey;
-  if (localModelOverride === undefined && !isLocalMode && !geminiApiKey) {
-    console.warn(
-      "⚠️ GEMINI_API_KEY가 설정되어 있지 않아 로컬 모델(Ollama) 모드로 자동 전환합니다.",
-    );
-  }
-
   // 1단계: 초기 파일 목록 획득 및 분석 시작
   let workspaceContext = getWorkspaceContext(projectPath);
   let allPaths = workspaceContext.files.map((f) => f.path);
   let phase1Result: Phase1Result = { relevantFiles: [] };
 
   console.log(
-    `[Prompt Diet] 1단계: 의존 파일 선별 및 초기화 분석 시작... (전체 파일 수: ${
-      workspaceContext.files.length
-    }개 / 모드: ${useLocal ? "Ollama" : "Gemini"})`,
+    `[Prompt Diet] 1단계: 의존 파일 선별 및 초기화 분석 시작... (전체 파일 수: ${workspaceContext.files.length}개 / 모드: Ollama)`,
   );
 
   try {
-    if (useLocal) {
-      const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
-      const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
-      phase1Result = await selectRelevantFilesOllama(
-        cleanUrl,
-        spec,
-        allPaths,
-        userRequest,
-        abortSignal,
-      );
-    } else {
-      phase1Result = await selectRelevantFilesGemini(
-        geminiApiKey!,
-        spec,
-        allPaths,
-        userRequest,
-        abortSignal,
-      );
-    }
+    const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
+    const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
+    phase1Result = await selectRelevantFilesOllama(
+      cleanUrl,
+      spec,
+      allPaths,
+      userRequest,
+      abortSignal,
+    );
   } catch (error) {
     console.warn("⚠️ 1단계 파일 선별 도중 에러가 발생했습니다:", error);
     phase1Result = { relevantFiles: allPaths };
@@ -98,9 +74,7 @@ export async function generateCodeUpdate(
   }
 
   console.log(
-    `[Prompt Diet] 2단계: 핵심 소스 코드 전송 시작... (다이어트 후 파일 수: ${
-      prunedFiles.length
-    }개 / ${allPaths.length}개 / 모드: ${useLocal ? "Ollama" : "Gemini"})`,
+    `[Prompt Diet] 2단계: 핵심 소스 코드 전송 시작... (다이어트 후 파일 수: ${prunedFiles.length}개 / ${allPaths.length}개 / 모드: Ollama)`,
   );
   console.log(
     `[Prompt Diet] 전송할 파일 목록:\n${prunedFiles
@@ -110,19 +84,9 @@ export async function generateCodeUpdate(
 
   let phase2Result: Phase2Result = { execute: [] };
 
-  if (useLocal) {
-    const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
-    const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
-    phase2Result = await generateCodeUpdateOllama(cleanUrl, spec, prunedFiles, userRequest, abortSignal);
-  } else {
-    phase2Result = await generateCodeUpdateGemini(
-      geminiApiKey!,
-      spec,
-      prunedFiles,
-      userRequest,
-      abortSignal,
-    );
-  }
+  const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
+  const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
+  phase2Result = await generateCodeUpdateOllama(cleanUrl, spec, prunedFiles, userRequest, abortSignal);
 
   return {
     setupCommands: runSetupCommands,

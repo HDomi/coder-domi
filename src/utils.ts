@@ -1,12 +1,14 @@
 import * as fs from "fs";
 import * as path from "path";
 import { exec } from "child_process";
+import * as dotenv from "dotenv";
+
+dotenv.config();
 
 // 미니 PC 인프라 내에서 대상 타겟 코드가 동기화되어 움직일 워크스페이스 정의
-export const WORKSPACE_DIR = path.resolve(
-  process.env.HOME || "",
-  "discord-coder-domi/workspace",
-);
+export const WORKSPACE_DIR = process.env.WORKSPACE_DIR
+  ? path.resolve(process.env.WORKSPACE_DIR)
+  : path.resolve(process.env.HOME || "", "coder-domi-storage/workspace");
 
 if (!fs.existsSync(WORKSPACE_DIR)) {
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
@@ -112,10 +114,14 @@ export function executeShellCommand(
     });
 
     if (child.stdout) {
-      child.stdout.on("data", (data) => console.log(`[shell-stdout] ${data.toString().trim()}`));
+      child.stdout.on("data", (data) =>
+        console.log(`[shell-stdout] ${data.toString().trim()}`),
+      );
     }
     if (child.stderr) {
-      child.stderr.on("data", (data) => console.error(`[shell-stderr] ${data.toString().trim()}`));
+      child.stderr.on("data", (data) =>
+        console.error(`[shell-stderr] ${data.toString().trim()}`),
+      );
     }
   });
 }

@@ -87,6 +87,9 @@ jobs:
             -e GIT_TOKEN='${{ secrets.GIT_TOKEN }}' \
             -e LOCAL_MODE='${{ secrets.LOCAL_MODE }}' \
             -e GEMINI_API_KEY='${{ secrets.GEMINI_API_KEY }}' \
+            -e FIREBASE_DATABASE_URL='${{ secrets.FIREBASE_DATABASE_URL }}' \
+            -e FIREBASE_SERVICE_ACCOUNT_JSON='${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' \
+            -e DISCORD_BLOG_CHANNEL_ID='${{ secrets.DISCORD_BLOG_CHANNEL_ID }}' \
             "$APP_NAME:latest"
 
           EOF

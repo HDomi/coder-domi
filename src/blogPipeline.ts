@@ -2,6 +2,7 @@ import { Client, EmbedBuilder, TextChannel } from "discord.js";
 import { firebaseClient, BlogPost } from "./firebase";
 import { randomUUID } from "crypto";
 import { AI_CONFIG } from "./config";
+import { executeWithOllamaLock } from "./ai/lock";
 
 const TEXT_MODEL = AI_CONFIG.BLOG_TEXT_MODEL;
 const EMBED_MODEL = AI_CONFIG.BLOG_EMBED_MODEL;
@@ -16,50 +17,52 @@ function getKstTimeString(): string {
 
 // Ollama 임베딩 호출 함수 (폴백 대응)
 export async function getOllamaEmbedding(text: string): Promise<number[]> {
-  const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
-  const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
+  return executeWithOllamaLock(async () => {
+    const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
+    const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
 
-  // 1단계: /api/embeddings 시도
-  try {
-    const response = await fetch(`${cleanUrl}/api/embeddings`, {
+    // 1단계: /api/embeddings 시도
+    try {
+      const response = await fetch(`${cleanUrl}/api/embeddings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: EMBED_MODEL,
+          prompt: text,
+        }),
+      });
+
+      if (response.ok) {
+        const data = (await response.json()) as any;
+        if (data.embedding && Array.isArray(data.embedding)) {
+          return data.embedding;
+        }
+      }
+    } catch (error) {
+      // /api/embeddings가 실패할 시 다음 폴백으로 진행
+    }
+
+    // 2단계: /api/embed 폴백 시도
+    const response = await fetch(`${cleanUrl}/api/embed`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: EMBED_MODEL,
-        prompt: text,
+        input: text,
       }),
     });
 
-    if (response.ok) {
-      const data = (await response.json()) as any;
-      if (data.embedding && Array.isArray(data.embedding)) {
-        return data.embedding;
-      }
+    if (!response.ok) {
+      throw new Error(`Ollama 임베딩 API 실패: ${response.statusText}`);
     }
-  } catch (error) {
-    // /api/embeddings가 실패할 시 다음 폴백으로 진행
-  }
 
-  // 2단계: /api/embed 폴백 시도
-  const response = await fetch(`${cleanUrl}/api/embed`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: EMBED_MODEL,
-      input: text,
-    }),
+    const data = (await response.json()) as any;
+    if (data.embeddings && Array.isArray(data.embeddings[0])) {
+      return data.embeddings[0];
+    }
+
+    throw new Error("Ollama 응답에서 임베딩 벡터를 추출하지 못했습니다.");
   });
-
-  if (!response.ok) {
-    throw new Error(`Ollama 임베딩 API 실패: ${response.statusText}`);
-  }
-
-  const data = (await response.json()) as any;
-  if (data.embeddings && Array.isArray(data.embeddings[0])) {
-    return data.embeddings[0];
-  }
-
-  throw new Error("Ollama 응답에서 임베딩 벡터를 추출하지 못했습니다.");
 }
 
 // 코사인 유사도 연산 함수
@@ -81,30 +84,32 @@ export function cosineSimilarity(vecA: number[], vecB: number[]): number {
 
 // Ollama 채팅 API 단순 호출 유틸리티
 async function callOllamaChat(prompt: string): Promise<string> {
-  const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
-  const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
+  return executeWithOllamaLock(async () => {
+    const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
+    const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
 
-  const response = await fetch(`${cleanUrl}/api/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: TEXT_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      format: "json",
-      options: { temperature: 0.7 },
-      stream: false,
-    }),
+    const response = await fetch(`${cleanUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: TEXT_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        format: "json",
+        options: { temperature: 0.7 },
+        stream: false,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama Chat API 호출 실패: ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as any;
+    if (data.message && data.message.content) {
+      return data.message.content.trim();
+    }
+    throw new Error("Ollama Chat 응답 내용이 존재하지 않습니다.");
   });
-
-  if (!response.ok) {
-    throw new Error(`Ollama Chat API 호출 실패: ${response.statusText}`);
-  }
-
-  const data = (await response.json()) as any;
-  if (data.message && data.message.content) {
-    return data.message.content.trim();
-  }
-  throw new Error("Ollama Chat 응답 내용이 존재하지 않습니다.");
 }
 
 export async function runBlogPostingPipeline(

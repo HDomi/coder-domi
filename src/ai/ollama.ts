@@ -1,6 +1,7 @@
 import { Phase1Result, Phase2Result } from "./types";
 import { Agent } from "undici";
 import { AI_CONFIG } from "../config";
+import { executeWithOllamaLock } from "./lock";
 
 export async function selectRelevantFilesOllama(
   aiApiUrl: string,
@@ -36,61 +37,65 @@ ${userRequest}
   }
 
   try {
-    const response = await fetch(`${aiApiUrl}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: AI_CONFIG.CODER_SELECT_MODEL,
-        messages: [{ role: "user", content: userPrompt }],
-        format: "json",
-        options: { temperature: 0.0 },
-        stream: true, // 중단 감지를 위해 스트리밍 사용
-      }),
-      signal: controller.signal,
+    const accumulatedContent = await executeWithOllamaLock(async () => {
+      const response = await fetch(`${aiApiUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: AI_CONFIG.CODER_SELECT_MODEL,
+          messages: [{ role: "user", content: userPrompt }],
+          format: "json",
+          options: { temperature: 0.0 },
+          stream: true, // 중단 감지를 위해 스트리밍 사용
+        }),
+        signal: controller.signal,
+        // @ts-ignore
+        dispatcher: new Agent({
+          headersTimeout: 300000,
+          bodyTimeout: 300000,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ollama 1단계 API 호출 실패: ${response.statusText}`);
+      }
+
+      let content = "";
+      let buffer = "";
+      const decoder = new TextDecoder();
+
       // @ts-ignore
-      dispatcher: new Agent({
-        headersTimeout: 300000,
-        bodyTimeout: 300000,
-      }),
-    });
+      for await (const chunk of response.body) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
 
-    if (!response.ok) {
-      throw new Error(`Ollama 1단계 API 호출 실패: ${response.statusText}`);
-    }
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const parsedChunk = JSON.parse(line);
+            if (parsedChunk.message && parsedChunk.message.content) {
+              content += parsedChunk.message.content;
+            }
+          } catch (err) {
+            // Ignore
+          }
+        }
+      }
 
-    let accumulatedContent = "";
-    let buffer = "";
-    const decoder = new TextDecoder();
-
-    // @ts-ignore
-    for await (const chunk of response.body) {
-      buffer += decoder.decode(chunk, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
+      if (buffer.trim()) {
         try {
-          const parsedChunk = JSON.parse(line);
+          const parsedChunk = JSON.parse(buffer);
           if (parsedChunk.message && parsedChunk.message.content) {
-            accumulatedContent += parsedChunk.message.content;
+            content += parsedChunk.message.content;
           }
         } catch (err) {
           // Ignore
         }
       }
-    }
 
-    if (buffer.trim()) {
-      try {
-        const parsedChunk = JSON.parse(buffer);
-        if (parsedChunk.message && parsedChunk.message.content) {
-          accumulatedContent += parsedChunk.message.content;
-        }
-      } catch (err) {
-        // Ignore
-      }
-    }
+      return content;
+    });
 
     if (accumulatedContent) {
       const parsed = JSON.parse(accumulatedContent.trim());
@@ -145,64 +150,68 @@ ${userRequest}
   }
 
   try {
-    const response = await fetch(`${aiApiUrl}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: AI_CONFIG.CODER_UPDATE_MODEL,
-        messages: [{ role: "user", content: userPrompt }],
-        format: "json",
-        options: { temperature: 0.1 },
-        stream: true, // 중단 감지를 위해 스트리밍 사용
-      }),
-      signal: controller.signal,
+    const accumulatedContent = await executeWithOllamaLock(async () => {
+      const response = await fetch(`${aiApiUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: AI_CONFIG.CODER_UPDATE_MODEL,
+          messages: [{ role: "user", content: userPrompt }],
+          format: "json",
+          options: { temperature: 0.1 },
+          stream: true, // 중단 감지를 위해 스트리밍 사용
+        }),
+        signal: controller.signal,
+        // @ts-ignore
+        dispatcher: new Agent({
+          headersTimeout: 1800000,
+          bodyTimeout: 1800000,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Ollama API 호출 실패: ${response.statusText} (${errorText})`,
+        );
+      }
+
+      let content = "";
+      let buffer = "";
+      const decoder = new TextDecoder();
+
       // @ts-ignore
-      dispatcher: new Agent({
-        headersTimeout: 1800000,
-        bodyTimeout: 1800000,
-      }),
-    });
+      for await (const chunk of response.body) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Ollama API 호출 실패: ${response.statusText} (${errorText})`,
-      );
-    }
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const parsedChunk = JSON.parse(line);
+            if (parsedChunk.message && parsedChunk.message.content) {
+              content += parsedChunk.message.content;
+            }
+          } catch (err) {
+            // Ignore
+          }
+        }
+      }
 
-    let accumulatedContent = "";
-    let buffer = "";
-    const decoder = new TextDecoder();
-
-    // @ts-ignore
-    for await (const chunk of response.body) {
-      buffer += decoder.decode(chunk, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
+      if (buffer.trim()) {
         try {
-          const parsedChunk = JSON.parse(line);
+          const parsedChunk = JSON.parse(buffer);
           if (parsedChunk.message && parsedChunk.message.content) {
-            accumulatedContent += parsedChunk.message.content;
+            content += parsedChunk.message.content;
           }
         } catch (err) {
           // Ignore
         }
       }
-    }
 
-    if (buffer.trim()) {
-      try {
-        const parsedChunk = JSON.parse(buffer);
-        if (parsedChunk.message && parsedChunk.message.content) {
-          accumulatedContent += parsedChunk.message.content;
-        }
-      } catch (err) {
-        // Ignore
-      }
-    }
+      return content;
+    });
 
     if (accumulatedContent) {
       try {

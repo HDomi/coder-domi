@@ -26,7 +26,7 @@ export const clearChat: Command = {
       try {
         let totalDeleted = 0;
         let fetched;
-        
+
         do {
           fetched = await channel.messages.fetch({ limit: 100 });
           if (fetched.size === 0) break;

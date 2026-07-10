@@ -37,11 +37,25 @@ export async function generateCodeUpdate(
   // 1.5단계: 1단계에서 반환된 setupCommands 즉시 실행
   const runSetupCommands: string[] = [];
   if (phase1Result.setupCommands && phase1Result.setupCommands.length > 0) {
-    const filteredSetup = phase1Result.setupCommands.filter(cmd => {
-      const forbidden = ["npm start", "npm run dev", "npm run start", "yarn start", "yarn dev", "pnpm start", "pnpm dev", "next dev", "next start"];
-      const isForbidden = forbidden.some(term => cmd.includes(term)) || (/\bvite\b/.test(cmd) && !/create-vite/.test(cmd));
+    const filteredSetup = phase1Result.setupCommands.filter((cmd) => {
+      const forbidden = [
+        "npm start",
+        "npm run dev",
+        "npm run start",
+        "yarn start",
+        "yarn dev",
+        "pnpm start",
+        "pnpm dev",
+        "next dev",
+        "next start",
+      ];
+      const isForbidden =
+        forbidden.some((term) => cmd.includes(term)) ||
+        (/\bvite\b/.test(cmd) && !/create-vite/.test(cmd));
       if (isForbidden) {
-        console.warn(`⚠️ [검열 비상] 모델이 금지된 지속성 서버 명령어를 뱉어 실행을 차단했습니다: ${cmd}`);
+        console.warn(
+          `⚠️ [검열 비상] 모델이 금지된 지속성 서버 명령어를 뱉어 실행을 차단했습니다: ${cmd}`,
+        );
         return false;
       }
       return true;
@@ -72,9 +86,7 @@ export async function generateCodeUpdate(
 
   // 선별된 파일들을 기반으로 새로운 정제 컨텍스트 구성
   const selectedPathsSet = new Set(selectedPaths);
-  const prunedFiles = workspaceContext.files.filter((f) =>
-    selectedPathsSet.has(f.path),
-  );
+  const prunedFiles = workspaceContext.files.filter((f) => selectedPathsSet.has(f.path));
 
   // 만약 새로 생성해야 하는 파일이 있다면, 해당 경로 정보를 빈 본문과 함께 컨텍스트에 표시해준다.
   for (const p of selectedPaths) {
@@ -99,7 +111,13 @@ export async function generateCodeUpdate(
 
   const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
   const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
-  phase2Result = await generateCodeUpdateOllama(cleanUrl, spec, prunedFiles, userRequest, abortSignal);
+  phase2Result = await generateCodeUpdateOllama(
+    cleanUrl,
+    spec,
+    prunedFiles,
+    userRequest,
+    abortSignal,
+  );
 
   return {
     setupCommands: runSetupCommands,

@@ -33,7 +33,9 @@ export const forceStop: Command = {
       descLines.push(`📋 대기 대기열의 **${result.cancelledCount}개** 작업이 모두 제거되었습니다.`);
     }
 
-    embed.setDescription(descLines.length > 0 ? descLines.join("\n\n") : "모든 작업이 비워졌습니다.");
+    embed.setDescription(
+      descLines.length > 0 ? descLines.join("\n\n") : "모든 작업이 비워졌습니다.",
+    );
 
     return interaction.reply({ embeds: [embed] });
   },

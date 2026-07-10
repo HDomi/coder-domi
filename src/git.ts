@@ -23,9 +23,7 @@ export async function setupAndPushRepo(
 
   if (!userResponse.ok) {
     const errorText = await userResponse.text();
-    throw new Error(
-      `GitHub 사용자 조회 실패: ${userResponse.statusText} (${errorText})`,
-    );
+    throw new Error(`GitHub 사용자 조회 실패: ${userResponse.statusText} (${errorText})`);
   }
 
   const userData = (await userResponse.json()) as GitHubUser;
@@ -33,17 +31,14 @@ export async function setupAndPushRepo(
   const repoName = appName;
 
   // 2. Check if repository already exists
-  const repoResponse = await fetch(
-    `https://api.github.com/repos/${username}/${repoName}`,
-    {
-      headers: {
-        Authorization: `Bearer ${gitToken}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "coder-domi-bot",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
+  const repoResponse = await fetch(`https://api.github.com/repos/${username}/${repoName}`, {
+    headers: {
+      Authorization: `Bearer ${gitToken}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "coder-domi-bot",
+      "X-GitHub-Api-Version": "2022-11-28",
     },
-  );
+  });
 
   if (repoResponse.status === 404) {
     // Repository does not exist, create it
@@ -66,14 +61,10 @@ export async function setupAndPushRepo(
 
     if (!createResponse.ok) {
       const errorText = await createResponse.text();
-      throw new Error(
-        `GitHub 레포지토리 생성 실패: ${createResponse.statusText} (${errorText})`,
-      );
+      throw new Error(`GitHub 레포지토리 생성 실패: ${createResponse.statusText} (${errorText})`);
     }
   } else if (!repoResponse.ok) {
-    throw new Error(
-      `GitHub 레포지토리 확인 중 오류 발생: ${repoResponse.statusText}`,
-    );
+    throw new Error(`GitHub 레포지토리 확인 중 오류 발생: ${repoResponse.statusText}`);
   }
 
   // 3. Local git setup
@@ -222,29 +213,26 @@ jobs:
 
   if (!userResponse.ok) {
     const errorText = await userResponse.text();
-    throw new Error(
-      `GitHub 사용자 조회 실패: ${userResponse.statusText} (${errorText})`,
-    );
+    throw new Error(`GitHub 사용자 조회 실패: ${userResponse.statusText} (${errorText})`);
   }
 
   const userData = (await userResponse.json()) as GitHubUser;
   const username = userData.login;
 
   // 2. Check repository existence, create with auto_init: true if missing to allow Pages creation before first push
-  const repoResponse = await fetch(
-    `https://api.github.com/repos/${username}/${appName}`,
-    {
-      headers: {
-        Authorization: `Bearer ${gitToken}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "coder-domi-bot",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
+  const repoResponse = await fetch(`https://api.github.com/repos/${username}/${appName}`, {
+    headers: {
+      Authorization: `Bearer ${gitToken}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "coder-domi-bot",
+      "X-GitHub-Api-Version": "2022-11-28",
     },
-  );
+  });
 
   if (repoResponse.status === 404) {
-    console.log(`레포지토리 ${appName}가 존재하지 않습니다. auto_init: true 옵션으로 새로 생성하는 중...`);
+    console.log(
+      `레포지토리 ${appName}가 존재하지 않습니다. auto_init: true 옵션으로 새로 생성하는 중...`,
+    );
     const createResponse = await fetch("https://api.github.com/user/repos", {
       method: "POST",
       headers: {
@@ -263,9 +251,7 @@ jobs:
 
     if (!createResponse.ok) {
       const errorText = await createResponse.text();
-      throw new Error(
-        `GitHub 레포지토리 생성 실패: ${createResponse.statusText} (${errorText})`,
-      );
+      throw new Error(`GitHub 레포지토리 생성 실패: ${createResponse.statusText} (${errorText})`);
     }
   }
 
@@ -282,23 +268,26 @@ jobs:
 
   if (pagesResponse.status === 404) {
     console.log("GitHub Pages가 설정되어 있지 않습니다. 설정을 진행합니다...");
-    const createPagesResponse = await fetch(`https://api.github.com/repos/${username}/${appName}/pages`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${gitToken}`,
-        "Content-Type": "application/json",
-        Accept: "application/vnd.github+json",
-        "User-Agent": "coder-domi-bot",
-        "X-GitHub-Api-Version": "2022-11-28",
+    const createPagesResponse = await fetch(
+      `https://api.github.com/repos/${username}/${appName}/pages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${gitToken}`,
+          "Content-Type": "application/json",
+          Accept: "application/vnd.github+json",
+          "User-Agent": "coder-domi-bot",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+        body: JSON.stringify({
+          build_type: "workflow",
+          source: {
+            branch: "main",
+            path: "/",
+          },
+        }),
       },
-      body: JSON.stringify({
-        build_type: "workflow",
-        source: {
-          branch: "main",
-          path: "/"
-        }
-      }),
-    });
+    );
 
     if (!createPagesResponse.ok) {
       const errorText = await createPagesResponse.text();
@@ -317,10 +306,7 @@ jobs:
   };
 }
 
-export async function deleteRemoteRepo(
-  appName: string,
-  gitToken: string,
-): Promise<void> {
+export async function deleteRemoteRepo(appName: string, gitToken: string): Promise<void> {
   // 1. Get authenticated user name
   const userResponse = await fetch("https://api.github.com/user", {
     headers: {
@@ -333,9 +319,7 @@ export async function deleteRemoteRepo(
 
   if (!userResponse.ok) {
     const errorText = await userResponse.text();
-    throw new Error(
-      `GitHub 사용자 조회 실패: ${userResponse.statusText} (${errorText})`,
-    );
+    throw new Error(`GitHub 사용자 조회 실패: ${userResponse.statusText} (${errorText})`);
   }
 
   const userData = (await userResponse.json()) as GitHubUser;
@@ -343,23 +327,18 @@ export async function deleteRemoteRepo(
   const repoName = appName;
 
   // 2. Delete remote repository
-  const deleteResponse = await fetch(
-    `https://api.github.com/repos/${username}/${repoName}`,
-    {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${gitToken}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "coder-domi-bot",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
+  const deleteResponse = await fetch(`https://api.github.com/repos/${username}/${repoName}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${gitToken}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "coder-domi-bot",
+      "X-GitHub-Api-Version": "2022-11-28",
     },
-  );
+  });
 
   if (deleteResponse.status !== 204 && deleteResponse.status !== 404) {
     const errorText = await deleteResponse.text();
-    throw new Error(
-      `GitHub 레포지토리 삭제 실패: ${deleteResponse.statusText} (${errorText})`,
-    );
+    throw new Error(`GitHub 레포지토리 삭제 실패: ${deleteResponse.statusText} (${errorText})`);
   }
 }

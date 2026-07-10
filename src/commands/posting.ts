@@ -22,7 +22,7 @@ export const posting: Command = {
           { name: "💡 요약", value: post.summary || "(요약 없음)" },
           { name: "🏷️ 태그", value: Object.keys(post.tags).join(", ") || "(태그 없음)" },
           { name: "🆔 UUID", value: `\`${post.uuid}\``, inline: true },
-          { name: "🕒 작성시간", value: post.createdAt, inline: true }
+          { name: "🕒 작성시간", value: post.createdAt, inline: true },
         )
         .setTimestamp();
 

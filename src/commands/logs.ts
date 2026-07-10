@@ -19,8 +19,7 @@ export const logs: Command = {
       if (codeBlockFormatted.length > 2000) {
         const buffer = Buffer.from(logLines, "utf-8");
         await interaction.editReply({
-          content:
-            "📋 Ollama 최근 100줄 로그의 용량이 2000자를 초과하여 텍스트 파일로 첨부합니다.",
+          content: "📋 Ollama 최근 100줄 로그의 용량이 2000자를 초과하여 텍스트 파일로 첨부합니다.",
           files: [
             {
               attachment: buffer,

@@ -6,9 +6,7 @@ import { Command } from "../types";
 export const coding: Command = {
   data: new SlashCommandBuilder()
     .setName("코딩")
-    .setDescription(
-      "AI를 통해 기획 명세 및 대화 내용을 분석해 자동으로 파일을 생성/수정합니다.",
-    )
+    .setDescription("AI를 통해 기획 명세 및 대화 내용을 분석해 자동으로 파일을 생성/수정합니다.")
     .addStringOption((option) =>
       option
         .setName("요청")
@@ -23,11 +21,6 @@ export const coding: Command = {
 
     // 큐 매니저에 작업을 위임합니다.
     // 즉시 Embed 메시지로 응답하므로 deferReply()가 불필요합니다.
-    await queueManager.enqueue(
-      interaction.channelId,
-      userRequest,
-      currentSession,
-      interaction,
-    );
+    await queueManager.enqueue(interaction.channelId, userRequest, currentSession, interaction);
   },
 };

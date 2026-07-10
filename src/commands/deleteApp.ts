@@ -13,9 +13,7 @@ export const deleteApp: Command = {
     .addStringOption((option) =>
       option
         .setName("앱이름")
-        .setDescription(
-          "삭제 확인을 위해 현재 세션의 앱 이름을 똑같이 입력하세요.",
-        )
+        .setDescription("삭제 확인을 위해 현재 세션의 앱 이름을 똑같이 입력하세요.")
         .setRequired(true),
     ),
   requiresSession: true,
@@ -77,20 +75,14 @@ export const deleteApp: Command = {
     // 결과 메시지 구성
     const statusLines = [
       `🧹 **[${currentSession.app_name}] 프로젝트 세션 말소 결과**`,
-      localDeleted
-        ? "✅ 로컬 프로젝트 디렉토리 삭제 완료"
-        : "❌ 로컬 프로젝트 디렉토리 삭제 실패",
-      sessionDeleted
-        ? "✅ SQLite 세션 정보 삭제 완료"
-        : "❌ SQLite 세션 정보 삭제 실패",
+      localDeleted ? "✅ 로컬 프로젝트 디렉토리 삭제 완료" : "❌ 로컬 프로젝트 디렉토리 삭제 실패",
+      sessionDeleted ? "✅ SQLite 세션 정보 삭제 완료" : "❌ SQLite 세션 정보 삭제 실패",
     ];
 
     if (githubDeleted) {
       statusLines.push("✅ GitHub 원격 저장소 삭제 완료");
     } else {
-      statusLines.push(
-        `⚠️ GitHub 원격 저장소 삭제 실패 (사유: ${githubErrorMsg})`,
-      );
+      statusLines.push(`⚠️ GitHub 원격 저장소 삭제 실패 (사유: ${githubErrorMsg})`);
       statusLines.push(
         `   *(참고: GitHub 토큰에 \`delete_repo\` 권한이 없을 경우 삭제할 수 없습니다.)*`,
       );

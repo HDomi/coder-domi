@@ -1,7 +1,4 @@
-import {
-  ChatInputCommandInteraction,
-  EmbedBuilder,
-} from "discord.js";
+import { ChatInputCommandInteraction, EmbedBuilder } from "discord.js";
 import * as fs from "fs";
 import * as path from "path";
 import { Session } from "./db";
@@ -18,7 +15,7 @@ export interface QueueItem {
   session: Session;
   interaction: ChatInputCommandInteraction;
   status: QueueItemStatus;
-  enqueuedAt: number;     // Date.now()
+  enqueuedAt: number; // Date.now()
   startedAt?: number;
   completedAt?: number;
   resultFiles?: string[];
@@ -188,20 +185,36 @@ class QueueManager {
 
       // 2단계 실행 명령어를 /bin/bash 환경에서 한 번에 묶어서 실행 (cd 및 세션 상태 유지)
       if (result.execute && result.execute.length > 0) {
-        const filteredExecute = result.execute.filter(execObj => {
+        const filteredExecute = result.execute.filter((execObj) => {
           const cmd = execObj.cmd;
-          const forbidden = ["npm start", "npm run dev", "npm run start", "yarn start", "yarn dev", "pnpm start", "pnpm dev", "next dev", "next start"];
-          const isForbidden = forbidden.some(term => cmd.includes(term)) || (/\bvite\b/.test(cmd) && !/create-vite/.test(cmd));
+          const forbidden = [
+            "npm start",
+            "npm run dev",
+            "npm run start",
+            "yarn start",
+            "yarn dev",
+            "pnpm start",
+            "pnpm dev",
+            "next dev",
+            "next start",
+          ];
+          const isForbidden =
+            forbidden.some((term) => cmd.includes(term)) ||
+            (/\bvite\b/.test(cmd) && !/create-vite/.test(cmd));
           if (isForbidden) {
-            console.warn(`⚠️ [검열 비상] 모델이 금지된 지속성 서버 명령어를 뱉어 실행을 차단했습니다: ${cmd}`);
+            console.warn(
+              `⚠️ [검열 비상] 모델이 금지된 지속성 서버 명령어를 뱉어 실행을 차단했습니다: ${cmd}`,
+            );
             return false;
           }
           return true;
         });
 
         if (filteredExecute.length > 0) {
-          console.log(`[대기열 작업] ${filteredExecute.length}개의 실행 명령어를 실행합니다 (체인 구성)...`);
-          const chainedCmd = filteredExecute.map(execObj => execObj.cmd).join(" && ");
+          console.log(
+            `[대기열 작업] ${filteredExecute.length}개의 실행 명령어를 실행합니다 (체인 구성)...`,
+          );
+          const chainedCmd = filteredExecute.map((execObj) => execObj.cmd).join(" && ");
           if (controller.signal.aborted) {
             throw new Error("사용자에 의해 강제 종료되었습니다.");
           }
@@ -228,11 +241,7 @@ class QueueManager {
   /**
    * 3초마다 진행 중인 작업의 경과 시간을 갱신합니다.
    */
-  private startLiveUpdate(
-    channelId: string,
-    item: QueueItem,
-    queue: QueueItem[],
-  ): void {
+  private startLiveUpdate(channelId: string, item: QueueItem, queue: QueueItem[]): void {
     this.stopLiveUpdate(channelId);
     const timer = setInterval(async () => {
       if (item.status !== "processing") {
@@ -260,10 +269,7 @@ class QueueManager {
   /**
    * 개별 아이템의 interaction 메시지를 최신 Embed으로 업데이트합니다.
    */
-  private async updateItemEmbed(
-    item: QueueItem,
-    queue: QueueItem[],
-  ): Promise<void> {
+  private async updateItemEmbed(item: QueueItem, queue: QueueItem[]): Promise<void> {
     try {
       const embed = this.buildItemEmbed(item, queue);
       await item.interaction.editReply({ embeds: [embed] });
@@ -280,11 +286,8 @@ class QueueManager {
 
     switch (item.status) {
       case "waiting": {
-        const position =
-          queue.filter((q) => q.status === "waiting").indexOf(item) + 1;
-        const totalWaiting = queue.filter(
-          (q) => q.status === "waiting",
-        ).length;
+        const position = queue.filter((q) => q.status === "waiting").indexOf(item) + 1;
+        const totalWaiting = queue.filter((q) => q.status === "waiting").length;
 
         embed
           .setTitle("⏳ 대기열에 추가됨")
@@ -309,9 +312,7 @@ class QueueManager {
 
       case "processing": {
         const elapsed = Date.now() - (item.startedAt || Date.now());
-        const waitingCount = queue.filter(
-          (q) => q.status === "waiting",
-        ).length;
+        const waitingCount = queue.filter((q) => q.status === "waiting").length;
 
         embed
           .setTitle("🔄 코더도미 작업 중...")
@@ -335,8 +336,7 @@ class QueueManager {
       }
 
       case "done": {
-        const totalTime =
-          (item.completedAt || Date.now()) - (item.startedAt || item.enqueuedAt);
+        const totalTime = (item.completedAt || Date.now()) - (item.startedAt || item.enqueuedAt);
 
         const fields = [];
 
@@ -346,7 +346,10 @@ class QueueManager {
             .join("\n");
           fields.push({
             name: "💻 실행된 명령어",
-            value: cmdListStr.length > 1024 ? cmdListStr.substring(0, 1000) + "\n... (생략됨)" : cmdListStr,
+            value:
+              cmdListStr.length > 1024
+                ? cmdListStr.substring(0, 1000) + "\n... (생략됨)"
+                : cmdListStr,
             inline: false,
           });
         }
@@ -375,8 +378,7 @@ class QueueManager {
       }
 
       case "error": {
-        const totalTime =
-          (item.completedAt || Date.now()) - (item.startedAt || item.enqueuedAt);
+        const totalTime = (item.completedAt || Date.now()) - (item.startedAt || item.enqueuedAt);
         let errMsg = item.errorMessage || "알 수 없는 오류";
         if (errMsg.length > 1000) {
           errMsg = errMsg.substring(0, 950) + "\n... (오류 메시지 생략됨)";

@@ -10,7 +10,7 @@ export const autoPosting: Command = {
       option
         .setName("활성화")
         .setDescription("스케줄러 작동 여부 설정 (생략 시 토글 토글)")
-        .setRequired(false)
+        .setRequired(false),
     ),
   async execute(interaction: ChatInputCommandInteraction) {
     await interaction.deferReply();
@@ -29,8 +29,11 @@ export const autoPosting: Command = {
         .setDescription(`스케줄러 상태가 업데이트되었습니다.`)
         .setColor(newStatus ? 0x2ecc71 : 0xe74c3c)
         .addFields(
-          { name: "📊 스케줄러 상태", value: newStatus ? "🟢 활성화됨 (Active)" : "🔴 비활성화됨 (Inactive)" },
-          { name: "🕒 스케줄 시각", value: "매일 오후 2:00 정각 (KST/Asia/Seoul)", inline: true }
+          {
+            name: "📊 스케줄러 상태",
+            value: newStatus ? "🟢 활성화됨 (Active)" : "🔴 비활성화됨 (Inactive)",
+          },
+          { name: "🕒 스케줄 시각", value: "매일 오후 2:00 정각 (KST/Asia/Seoul)", inline: true },
         )
         .setTimestamp();
 

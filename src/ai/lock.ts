@@ -6,7 +6,9 @@ let isOllamaBusy = false;
  */
 export async function executeWithOllamaLock<T>(fn: () => Promise<T>): Promise<T> {
   if (isOllamaBusy) {
-    throw new Error("🔄 현재 서버의 다른 AI 자아가 사색(연산) 중입니다. 잠시 후 다시 시도해 주세요.");
+    throw new Error(
+      "🔄 현재 서버의 다른 AI 자아가 사색(연산) 중입니다. 잠시 후 다시 시도해 주세요.",
+    );
   }
 
   isOllamaBusy = true;

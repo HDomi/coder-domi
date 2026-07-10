@@ -34,9 +34,7 @@ export const deploy: Command = {
       );
     } catch (error: any) {
       console.error(error);
-      await interaction.editReply(
-        `❌ GitHub Pages 배포 적용 실패: ${error.message}`,
-      );
+      await interaction.editReply(`❌ GitHub Pages 배포 적용 실패: ${error.message}`);
     }
   },
 };

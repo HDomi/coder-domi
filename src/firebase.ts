@@ -52,9 +52,9 @@ if (envJson) {
 if (!serviceAccount) {
   throw new Error(
     "❌ Firebase 서비스 계정 키를 찾을 수 없습니다. 다음 방법 중 하나를 선택해 주세요:\n" +
-    "1. 다운로드 받은 JSON 키 파일을 프로젝트 루트 디렉토리에 'firebase-key.json' 이라는 이름으로 저장\n" +
-    "2. 환경변수 'FIREBASE_SERVICE_ACCOUNT_PATH'에 키 파일 절대 경로 지정\n" +
-    "3. 환경변수 'FIREBASE_SERVICE_ACCOUNT_JSON'에 키 JSON 문자열 지정"
+      "1. 다운로드 받은 JSON 키 파일을 프로젝트 루트 디렉토리에 'firebase-key.json' 이라는 이름으로 저장\n" +
+      "2. 환경변수 'FIREBASE_SERVICE_ACCOUNT_PATH'에 키 파일 절대 경로 지정\n" +
+      "3. 환경변수 'FIREBASE_SERVICE_ACCOUNT_JSON'에 키 JSON 문자열 지정",
   );
 }
 

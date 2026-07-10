@@ -101,12 +101,8 @@ ${userRequest}
       const parsed = JSON.parse(accumulatedContent.trim());
       if (parsed) {
         return {
-          setupCommands: Array.isArray(parsed.setupCommands)
-            ? parsed.setupCommands
-            : [],
-          relevantFiles: Array.isArray(parsed.relevantFiles)
-            ? parsed.relevantFiles
-            : [],
+          setupCommands: Array.isArray(parsed.setupCommands) ? parsed.setupCommands : [],
+          relevantFiles: Array.isArray(parsed.relevantFiles) ? parsed.relevantFiles : [],
         };
       }
     }
@@ -171,9 +167,7 @@ ${userRequest}
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(
-          `Ollama API 호출 실패: ${response.statusText} (${errorText})`,
-        );
+        throw new Error(`Ollama API 호출 실패: ${response.statusText} (${errorText})`);
       }
 
       let content = "";

@@ -82,11 +82,7 @@ export const spec: Command = {
 
       const browser = await puppeteer.launch({
         executablePath,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-        ],
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
         headless: true,
       });
 
@@ -127,9 +123,7 @@ export const spec: Command = {
       });
     } catch (error: any) {
       console.error(error);
-      await interaction.editReply(
-        `❌ SPEC.md 이미지 렌더링 실패: ${error.message}`,
-      );
+      await interaction.editReply(`❌ SPEC.md 이미지 렌더링 실패: ${error.message}`);
     }
   },
 };

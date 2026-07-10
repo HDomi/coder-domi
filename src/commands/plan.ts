@@ -11,9 +11,7 @@ export const plan: Command = {
     .addStringOption((option) =>
       option
         .setName("내용")
-        .setDescription(
-          "추가할 기획 내용 (예: API 응답 지연 시 스켈레톤 UI 노출)",
-        )
+        .setDescription("추가할 기획 내용 (예: API 응답 지연 시 스켈레톤 UI 노출)")
         .setRequired(true),
     ),
   requiresSession: true,

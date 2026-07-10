@@ -99,10 +99,7 @@ export function getOllamaLogs(lineCount: number = 100): string {
   }
 
   // 2단계: macOS 기본 경로 확인
-  const macDefaultPath = path.join(
-    process.env.HOME || "",
-    ".ollama/logs/server.log",
-  );
+  const macDefaultPath = path.join(process.env.HOME || "", ".ollama/logs/server.log");
   if (fs.existsSync(macDefaultPath)) {
     try {
       const content = fs.readFileSync(macDefaultPath, "utf-8");

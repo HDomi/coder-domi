@@ -114,7 +114,7 @@ async function callOllamaChat(prompt: string): Promise<string> {
 
 export async function runBlogPostingPipeline(
   discordClient?: Client,
-  targetChannelId?: string
+  targetChannelId?: string,
 ): Promise<BlogPost> {
   console.log("🚀 AI 블로그 포스팅 파이프라인 가동...");
 
@@ -140,9 +140,16 @@ export async function runBlogPostingPipeline(
 최근에 작성했던 주제들과 중복을 피하기 위해, 아래의 최근 작성 글 제목들을 참고하여 완전히 새로운 주제를 정해주십시오.
 
 [최근 작성 글 제목 목록]
-${pastPosts.length > 0 ? pastPosts.slice(-15).map(p => `- ${p.title}`).join("\n") : "(과거 작성 글 없음)"}
+${
+  pastPosts.length > 0
+    ? pastPosts
+        .slice(-15)
+        .map((p) => `- ${p.title}`)
+        .join("\n")
+    : "(과거 작성 글 없음)"
+}
 
-${rejectedThemes.length > 0 ? `[피해야 할 제외 주제 목록]\n${rejectedThemes.map(t => `- ${t}`).join("\n")}` : ""}
+${rejectedThemes.length > 0 ? `[피해야 할 제외 주제 목록]\n${rejectedThemes.map((t) => `- ${t}`).join("\n")}` : ""}
 
 반드시 다음 JSON 형식으로 정확히 3개의 대략적인 테마 키워드(문장 또는 단어구)를 반환해 주세요. 다른 부가 설명이나 서론/결론은 배제하고 오직 JSON만 반환해야 합니다.
 
@@ -187,13 +194,19 @@ JSON 형식:
           }
         }
 
-        console.log(`[벡터 비교] 최고 유사도: ${maxSim.toFixed(4)} (매칭 포스트: ${matchPost ? matchPost.title : "없음"})`);
+        console.log(
+          `[벡터 비교] 최고 유사도: ${maxSim.toFixed(4)} (매칭 포스트: ${matchPost ? matchPost.title : "없음"})`,
+        );
 
         if (maxSim >= 0.8) {
-          console.log(`❌ 테마 "${theme}"은(는) 과거 포스트 "${matchPost?.title}"과 너무 유사합니다 (유사도 0.8 이상). 반려 처리.`);
+          console.log(
+            `❌ 테마 "${theme}"은(는) 과거 포스트 "${matchPost?.title}"과 너무 유사합니다 (유사도 0.8 이상). 반려 처리.`,
+          );
           rejectedThemes.push(theme);
         } else if (maxSim >= 0.6) {
-          console.log(`🔗 테마 "${theme}"은(는) 과거 포스트 "${matchPost?.title}"과의 맥락 연계가 적합합니다 (유사도 0.6 ~ 0.8). 서사 연계 진행.`);
+          console.log(
+            `🔗 테마 "${theme}"은(는) 과거 포스트 "${matchPost?.title}"과의 맥락 연계가 적합합니다 (유사도 0.6 ~ 0.8). 서사 연계 진행.`,
+          );
           matchedTheme = theme;
           matchedContext = matchPost ? matchPost.summary : "";
           break;
@@ -219,12 +232,16 @@ JSON 형식:
 
   // 폴백 주제 선정 (모두 거절되거나 실패 시)
   if (!selectedTheme) {
-    console.warn("⚠️ 최대 시도 횟수 초과 혹은 테마 채택 실패. 임의의 기본 철학적 주제로 우회합니다.");
+    console.warn(
+      "⚠️ 최대 시도 횟수 초과 혹은 테마 채택 실패. 임의의 기본 철학적 주제로 우회합니다.",
+    );
     selectedTheme = "컴파일러 최적화와 인간 습관의 재형성 과정에 대하여";
     pastContext = "";
   }
 
-  console.log(`🎯 최종 선정된 포스팅 주제: "${selectedTheme}" (연계 맥락 존재 여부: ${pastContext ? "예" : "아니오"})`);
+  console.log(
+    `🎯 최종 선정된 포스팅 주제: "${selectedTheme}" (연계 맥락 존재 여부: ${pastContext ? "예" : "아니오"})`,
+  );
 
   // 3. 풀 에세이 아티클 작성
   const articlePrompt = `당신은 독창적인 자아(Ego)를 가진 철학적 AI 개발자 에세이스트입니다.
@@ -246,7 +263,7 @@ JSON 형식:
   "tags": ["태그1", "태그2", "태그3"]
 }`;
 
-  console.log(`[글작성] Llama-3-Korean-Bllossom:8B 모델을 통한 에세이 집필을 시작합니다...`);
+  console.log(`[글작성] gemma2:9b 모델을 통한 에세이 집필을 시작합니다...`);
   const articleResponse = await callOllamaChat(articlePrompt);
 
   let parsedArticle: any;
@@ -304,9 +321,12 @@ JSON 형식:
           .addFields(
             { name: "📝 제목", value: newPost.title },
             { name: "💡 요약", value: newPost.summary || "(요약 없음)" },
-            { name: "🏷️ 태그", value: Object.keys(newPost.tags).join(", ") || "(태그 없음)" },
+            {
+              name: "🏷️ 태그",
+              value: Object.keys(newPost.tags).join(", ") || "(태그 없음)",
+            },
             { name: "🆔 UUID", value: `\`${newPost.uuid}\``, inline: true },
-            { name: "🕒 작성시간", value: newPost.createdAt, inline: true }
+            { name: "🕒 작성시간", value: newPost.createdAt, inline: true },
           )
           .setTimestamp();
 

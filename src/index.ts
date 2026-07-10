@@ -1,10 +1,4 @@
-import {
-  Client,
-  GatewayIntentBits,
-  Interaction,
-  REST,
-  Routes,
-} from "discord.js";
+import { Client, GatewayIntentBits, Interaction, REST, Routes } from "discord.js";
 import * as dotenv from "dotenv";
 import { dbManager } from "./db";
 import { initLogger } from "./logger";
@@ -25,9 +19,7 @@ const commandMap = new Map(commands.map((cmd) => [cmd.data.name, cmd]));
 const commandsJson = commands.map((cmd) => cmd.data.toJSON());
 
 client.once("ready", async (readyClient) => {
-  console.log(
-    `🚀 Coder-Domi ChatOps 에이전트 가동 상태 정상: ${readyClient.user?.tag}`,
-  );
+  console.log(`🚀 Coder-Domi ChatOps 에이전트 가동 상태 정상: ${readyClient.user?.tag}`);
 
   const token = process.env.DISCORD_TOKEN;
   const clientId = process.env.CLIENT_ID;

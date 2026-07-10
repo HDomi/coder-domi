@@ -99,11 +99,7 @@ export function getPuppeteerExecutablePath(): string {
   return executablePath;
 }
 
-export function executeShellCommand(
-  cmd: string,
-  cwd: string,
-  signal?: AbortSignal,
-): Promise<void> {
+export function executeShellCommand(cmd: string, cwd: string, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = exec(cmd, { cwd, shell: "/bin/bash", signal }, (error) => {
       if (error) {
@@ -117,14 +113,10 @@ export function executeShellCommand(
     child.stdin?.end();
 
     if (child.stdout) {
-      child.stdout.on("data", (data) =>
-        console.log(`[쉘-표준출력] ${data.toString().trim()}`),
-      );
+      child.stdout.on("data", (data) => console.log(`[쉘-표준출력] ${data.toString().trim()}`));
     }
     if (child.stderr) {
-      child.stderr.on("data", (data) =>
-        console.error(`[쉘-표준에러] ${data.toString().trim()}`),
-      );
+      child.stderr.on("data", (data) => console.error(`[쉘-표준에러] ${data.toString().trim()}`));
     }
   });
 }

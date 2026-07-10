@@ -16,7 +16,9 @@ export function initScheduler(client: Client) {
       try {
         const isActive = await firebaseClient.getSchedulerActiveStatus();
         if (!isActive) {
-          console.log("ℹ️ [스케줄러] 자동 포스팅 스케줄러 상태가 '비활성화(false)' 상태이므로 생성을 건너뜁니다.");
+          console.log(
+            "ℹ️ [스케줄러] 자동 포스팅 스케줄러 상태가 '비활성화(false)' 상태이므로 생성을 건너뜁니다.",
+          );
           return;
         }
 
@@ -29,6 +31,6 @@ export function initScheduler(client: Client) {
     },
     {
       timezone: "Asia/Seoul",
-    }
+    },
   );
 }

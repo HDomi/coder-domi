@@ -12,9 +12,7 @@ export const connect: Command = {
     .addStringOption((option) =>
       option
         .setName("앱이름")
-        .setDescription(
-          "생성하거나 연결할 애플리케이션 이름 (영어/숫자/대시만 가능)",
-        )
+        .setDescription("생성하거나 연결할 애플리케이션 이름 (영어/숫자/대시만 가능)")
         .setRequired(true),
     ),
   async execute(interaction: ChatInputCommandInteraction) {
@@ -23,8 +21,7 @@ export const connect: Command = {
     // 영어, 숫자, 대시(-) 문자만 포함하도록 방어적 이름 체크
     if (!/^[a-zA-Z0-9-_]+$/.test(appName)) {
       return interaction.reply({
-        content:
-          "❌ 앱 이름은 영문, 숫자, 대시(-), 언더바(_)만 사용할 수 있습니다.",
+        content: "❌ 앱 이름은 영문, 숫자, 대시(-), 언더바(_)만 사용할 수 있습니다.",
         ephemeral: true,
       });
     }

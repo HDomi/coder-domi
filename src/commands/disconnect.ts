@@ -19,9 +19,7 @@ export const disconnect: Command = {
       );
     } catch (error: any) {
       console.error(error);
-      return interaction.reply(
-        `❌ 개발 세션 연결 해제 중 오류가 발생했습니다: ${error.message}`,
-      );
+      return interaction.reply(`❌ 개발 세션 연결 해제 중 오류가 발생했습니다: ${error.message}`);
     }
   },
 };

@@ -112,4 +112,13 @@ export const firebaseClient = {
     await db.ref(`posts/${post.uuid}`).set(post);
     console.log(`✅ Firebase에 포스팅 저장 성공 (Admin SDK): ${post.title} (${post.uuid})`);
   },
+
+  /**
+   * 포스트를 데이터베이스에서 삭제합니다.
+   * 경로: posts/{uuid}
+   */
+  async deletePost(uuid: string): Promise<void> {
+    await db.ref(`posts/${uuid}`).remove();
+    console.log(`🗑️ Firebase에서 포스팅 삭제 성공: ${uuid}`);
+  },
 };

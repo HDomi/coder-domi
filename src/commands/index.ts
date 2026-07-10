@@ -12,6 +12,7 @@ import { forceStop } from "./forceStop";
 import { clearChat } from "./clearChat";
 import { posting } from "./posting";
 import { autoPosting } from "./autoPosting";
+import { deletePost } from "./deletePost";
 import { Command } from "../types";
 
 export const commands: Command[] = [
@@ -29,4 +30,5 @@ export const commands: Command[] = [
   clearChat,
   posting,
   autoPosting,
+  deletePost,
 ];

@@ -29,11 +29,11 @@ export const posting: Command = {
 
       const progressEmbed = new EmbedBuilder()
         .setTitle("🔄 AI 블로그 포스팅 생성 중...")
-        .setDescription("포스팅 생성 작업을 수행하고 있습니다. 완료 시 정적 블로그 빌드가 함께 시작됩니다.")
+        .setDescription("포스팅 생성 작업을 수행하고 있습니다.")
         .setColor(0x3498db) // 파란색
         .addFields(
           { name: "📋 현재 단계", value: currentStatus },
-          { name: "⏱️ 경과 시간", value: formatElapsed(elapsed) }
+          { name: "⏱️ 경과 시간", value: formatElapsed(elapsed) },
         )
         .setTimestamp();
 
@@ -58,7 +58,7 @@ export const posting: Command = {
         undefined,
         async (statusMsg) => {
           await updateProgressEmbed(statusMsg);
-        }
+        },
       );
 
       clearInterval(timer);
@@ -90,7 +90,7 @@ export const posting: Command = {
         .setColor(0xe74c3c)
         .addFields(
           { name: "🔍 오류 내용", value: error.message || "알 수 없는 오류" },
-          { name: "⏱️ 경과 시간", value: formatElapsed(totalTime) }
+          { name: "⏱️ 경과 시간", value: formatElapsed(totalTime) },
         )
         .setTimestamp();
 

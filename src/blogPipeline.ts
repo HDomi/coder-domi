@@ -121,28 +121,103 @@ interface GeminiOptions {
   signal?: AbortSignal;
 }
 
-// Gemini 채팅 API 호출 유틸리티
+// 대기(sleep) 헬퍼 함수 (AbortSignal 지원)
+function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      return reject(new Error("포스팅 생성이 중단되었습니다."));
+    }
+    const timer = setTimeout(() => {
+      if (signal) {
+        signal.removeEventListener("abort", onAbort);
+      }
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error("포스팅 생성이 중단되었습니다."));
+    };
+
+    if (signal) {
+      signal.addEventListener("abort", onAbort);
+    }
+  });
+}
+
+// 재시도 가능한 오류인지 판별하는 헬퍼 함수
+function isRetryableError(error: any): boolean {
+  if (error.status === 503 || error.status === 429 || error.status === 500 || error.status === 502 || error.status === 504) {
+    return true;
+  }
+  const msg = (error.message || "").toLowerCase();
+  if (
+    msg.includes("503") ||
+    msg.includes("429") ||
+    msg.includes("high demand") ||
+    msg.includes("unavailable") ||
+    msg.includes("resource_exhausted") ||
+    msg.includes("resource exhausted") ||
+    msg.includes("spikes in demand")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+// Gemini 채팅 API 호출 유틸리티 (재시도 로직 포함)
 async function callGeminiChat(prompt: string, options: GeminiOptions = {}): Promise<string> {
   const ai = getGenAI();
+  const maxAttempts = 5;
+  const baseDelay = 2000; // 2초
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-      temperature: options.temperature ?? 0.7,
-      topP: options.topP ?? undefined,
-      systemInstruction: options.systemInstruction ?? undefined,
-      responseMimeType: options.jsonMode ? "application/json" : undefined,
-      responseSchema: options.responseSchema ?? undefined,
-      abortSignal: options.signal ?? undefined,
-    },
-  });
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (options.signal?.aborted) {
+      throw new Error("포스팅 생성이 중단되었습니다.");
+    }
 
-  const text = response.text;
-  if (!text) {
-    throw new Error("Gemini 응답에서 텍스트 콘텐츠를 추출하지 못했습니다.");
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: {
+          temperature: options.temperature ?? 0.7,
+          topP: options.topP ?? undefined,
+          systemInstruction: options.systemInstruction ?? undefined,
+          responseMimeType: options.jsonMode ? "application/json" : undefined,
+          responseSchema: options.responseSchema ?? undefined,
+          abortSignal: options.signal ?? undefined,
+        },
+      });
+
+      const text = response.text;
+      if (!text) {
+        throw new Error("Gemini 응답에서 텍스트 콘텐츠를 추출하지 못했습니다.");
+      }
+      return text.trim();
+    } catch (error: any) {
+      // 만약 취소(abort)로 인한 에러라면 재시도하지 않고 바로 throw
+      if (options.signal?.aborted || error.message === "포스팅 생성이 중단되었습니다.") {
+        throw error;
+      }
+
+      if (attempt < maxAttempts && isRetryableError(error)) {
+        // 지수 백오프 + 지터(0~1초)
+        const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 1000;
+        console.warn(
+          `⚠️ [Gemini API] 일시적 오류 발생 (${error.status || error.message}). ` +
+          `${Math.round(delay)}ms 후 재시도합니다... (시도 ${attempt}/${maxAttempts})`
+        );
+        await sleepWithSignal(delay, options.signal);
+      } else {
+        // 마지막 시도이거나 재시도할 수 없는 에러인 경우 throw
+        console.error(`❌ [Gemini API] 최종 시도 실패 또는 재시도 불가능한 에러 발생:`, error);
+        throw error;
+      }
+    }
   }
-  return text.trim();
+
+  throw new Error("Gemini API 호출에 실패했습니다. (최대 재시도 횟수 초과)");
 }
 
 export async function runBlogPostingPipeline(

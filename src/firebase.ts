@@ -23,6 +23,8 @@ export interface FortuneUserInfo {
   birthDay: string;
   birthTime: string;
   zodiacSign: string;
+  ilgan?: string;
+  sajuPillars?: string;
   updatedAt?: string;
 }
 

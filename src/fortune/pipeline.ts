@@ -2,6 +2,12 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { TextChannel, ChatInputCommandInteraction } from "discord.js";
 import { firebaseClient, FortuneUserInfo } from "../firebase";
 import { WeeklyFortuneResult, DayFortune } from "./types";
+import {
+  getIljinForDate,
+  parseIlganIndex,
+  getSipseongForDay,
+  CHEONGAN,
+} from "./sajuUtils";
 
 /**
  * KST(Asia/Seoul) 기준 현재 주의 월요일~일요일 날짜와 주차 정보를 계산합니다.
@@ -82,23 +88,41 @@ export async function generateWeeklyFortune(
   const { weekTitle, days } = getCurrentWeekDaysKst();
   const ai = getGenAI();
 
+  // 일간 인덱스 분석 (예: "계수", "癸水" -> 9 (계))
+  const ilganIdx = parseIlganIndex(userInfo.ilgan);
+  let ilganDisplay = userInfo.ilgan ? userInfo.ilgan : "미지정 (제공된 일진 기반 해석)";
+  if (ilganIdx !== null) {
+    const c = CHEONGAN[ilganIdx];
+    ilganDisplay = `${c.name}수/목/화/토/금 (${c.name}${c.hanja})`;
+    if (userInfo.ilgan) {
+      ilganDisplay = `${userInfo.ilgan} (천간: ${c.name}${c.hanja})`;
+    }
+  }
+
   const daysInfoPrompt = days
-    .map((d) => `- ${d.dateStr} (${d.dayName})`)
+    .map((d) => {
+      const iljin = getIljinForDate(d.dateStr);
+      let sipseongText = "";
+      if (ilganIdx !== null) {
+        sipseongText = ` ${getSipseongForDay(iljin, ilganIdx)}`;
+      }
+      return `- ${d.dateStr} (${d.dayName.substring(0, 1)}): ${iljin.fullName}${sipseongText}`;
+    })
     .join("\n");
 
   const prompt = `
-당신은 동양의 사주명리학과 서양의 별자리 점성술을 집대성한 대한민국 최고의 운세 명인입니다.
-아래 사용자의 사주 및 별자리 정보와 이번 주 날짜 범위를 바탕으로, 이번 주 월요일부터 일요일까지 7일간의 요일별 운세를 아주 상세하고 깊이 있게 작성해 주세요.
+[역할 정의]
+너는 명리학과 동양철학에 깊은 지식을 가진 전문 역학 상담가야. 
+아래 제공된 [사용자 사주 및 별자리 정보]와 [해당 주간의 실제 만세력 일진] 데이터를 바탕으로, 각 날짜별 십성(十星)과 오행의 상생상극을 논리적으로 분석하여 주간 운세를 작성해 줘.
 
 [사용자 사주 및 별자리 정보]
-- 사주 구분: ${userInfo.sajuFormat || "양력"}
-- 출생연도: ${userInfo.birthYear}
-- 출생월: ${userInfo.birthMonth}
-- 출생일: ${userInfo.birthDay}
+- 생년월일: ${userInfo.birthYear}년 ${userInfo.birthMonth}월 ${userInfo.birthDay}일 (${userInfo.sajuFormat || "양력"})
 - 출생시: ${userInfo.birthTime}
+- 사주 일간: ${ilganDisplay}
+${userInfo.sajuPillars ? `- 사주 명식: ${userInfo.sajuPillars}` : ""}
 - 별자리: ${userInfo.zodiacSign}
 
-[이번 주 요일 목록]
+[분석할 주간 및 실제 만세력 일진]
 ${daysInfoPrompt}
 
 [운세 분석 태도 및 톤앤매너]
@@ -107,16 +131,16 @@ ${daysInfoPrompt}
 - **실질적 대처법**: 나쁜 운세에는 피해를 줄이는 방어적인 대처법을, 좋은 운세에는 성과를 극대화하는 실행 전략을 명확히 제시하세요.
 
 [작성 가이드라인]
-1. 월요일부터 일요일까지 7일 각 날짜에 대해 작성합니다.
-2. 디스코드 2,000자 글자 수 제한을 감안하여, 각 요일별 내용(content)은 디스코드 마크다운 서식을 활용하여 풍부하고 매끄럽게 작성해 주세요.
-3. 각 요일별 운세 content에는 반드시 아래 항목들이 빠짐없이 상세하게 포함되어야 합니다:
-   - 📅 **[날짜 및 요일 헤더]**
+1. 반드시 지정된 사주 일간과 각 날짜의 60갑자 일진 및 일봉 십성(十星) 작용을 정확히 적용해서 명리학 원리에 입각하여 해석할 것. (절대 사용자의 일간을 임의로 변경하거나 가상의 일진으로 착각하지 말 것)
+2. 추상적이거나 화려하기만 한 미사여구는 줄이고, 실질적으로 도움이 되는 직장/학업/대인관계/재물/컨디션 관리 팁 위주로 작성할 것.
+3. 디스코드 마크다운 서식을 활용하여 각 요일별 내용(content)에는 반드시 아래 항목들이 빠짐없이 상세하게 포함되어야 합니다:
+   - 📅 **[날짜 및 요일 헤더]** (예: \`📅 2026년 7월 27일 (월) - 정축(丁丑)일 [편재/편관]\`)
    - 💼 **직장 & 학업 / 사업운**: 성과, 협업, 업무 주의사항, 추진 전략
    - 💖 **연애 & 대인관계운**: 연인/솔로 관계 흐름, 감정 상태, 대인관계 조언
    - 💰 **금전 & 재물운**: 지출/수입 흐름, 투자/재물 기회, 주의해야 할 지출
    - 🍀 **행운 요소**: 행운의 색상, 행운의 숫자, 행운의 아이템, 행운의 방위
    - 💡 **오늘의 총평 및 힐링 조언**: 마음가짐 및 하루를 다스리는 팁
-4. 각 요일의 content는 디스코드 메시지 1개로 발송되므로, 읽는 이가 감동과 몰입감을 느낄 수 있도록 1,200자~1,800자 내외로 정성껏 길고 상세하게 작성하세요. (단, 1,900자 초과 금지)
+4. 각 요일의 content는 디스코드 메시지 1개로 발송되므로, 읽는 이가 몰입감을 느낄 수 있도록 1,200자~1,800자 내외로 정성껏 길고 상세하게 작성하세요. (단, 1,900자 초과 금지)
 
 응답은 지정된 JSON 형식으로 작성해 주세요.
 `;
@@ -180,9 +204,11 @@ export async function sendWeeklyFortuneMessages(
   target: TextChannel | ChatInputCommandInteraction,
   result: WeeklyFortuneResult
 ): Promise<void> {
+  const ilganStr = result.userInfo.ilgan ? ` / 일간: ${result.userInfo.ilgan}` : "";
+  const pillarsStr = result.userInfo.sajuPillars ? ` / 명식: ${result.userInfo.sajuPillars}` : "";
   const headerText =
     `${result.weekTitle}\n` +
-    `👤 **사주 정보**: ${result.userInfo.birthYear} ${result.userInfo.birthMonth} ${result.userInfo.birthDay} (${result.userInfo.birthTime}) / ${result.userInfo.zodiacSign} [${result.userInfo.sajuFormat}]\n` +
+    `👤 **사주 정보**: ${result.userInfo.birthYear} ${result.userInfo.birthMonth} ${result.userInfo.birthDay} (${result.userInfo.birthTime})${ilganStr}${pillarsStr} / ${result.userInfo.zodiacSign} [${result.userInfo.sajuFormat}]\n` +
     `----------------------------------------`;
 
   if (target instanceof ChatInputCommandInteraction) {

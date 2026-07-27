@@ -45,6 +45,18 @@ export const fortuneSetInfo: Command = {
           { name: "양력", value: "양력" },
           { name: "음력", value: "음력" }
         )
+    )
+    .addStringOption((option) =>
+      option
+        .setName("일간")
+        .setDescription("사주 본인의 일간 (예: 계수 癸水, 경금 庚金, 갑목 甲木 등)")
+        .setRequired(false)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("사주명식")
+        .setDescription("본인의 사주 4주 8자 (예: 무인년 정사월 계축일 기미시)")
+        .setRequired(false)
     ),
   async execute(interaction: ChatInputCommandInteraction) {
     await interaction.deferReply();
@@ -56,6 +68,8 @@ export const fortuneSetInfo: Command = {
       const birthTime = interaction.options.getString("시", true);
       const zodiacSign = interaction.options.getString("별자리", true);
       const sajuFormat = interaction.options.getString("사주형식") || "양력";
+      const ilgan = interaction.options.getString("일간") || undefined;
+      const sajuPillars = interaction.options.getString("사주명식") || undefined;
 
       const userInfo = {
         sajuFormat,
@@ -64,20 +78,31 @@ export const fortuneSetInfo: Command = {
         birthDay,
         birthTime,
         zodiacSign,
+        ilgan,
+        sajuPillars,
         updatedAt: new Date().toISOString(),
       };
 
       await firebaseClient.setFortuneUserInfo(userInfo);
 
+      const fields: { name: string; value: string; inline?: boolean }[] = [
+        { name: "📅 생년월일 (구분)", value: `${birthYear} ${birthMonth} ${birthDay} (${sajuFormat})`, inline: true },
+        { name: "⏰ 출생 시각", value: birthTime, inline: true },
+        { name: "⭐ 별자리", value: zodiacSign, inline: true },
+      ];
+
+      if (ilgan) {
+        fields.push({ name: "☯️ 사주 일간", value: ilgan, inline: true });
+      }
+      if (sajuPillars) {
+        fields.push({ name: "📜 사주 명식", value: sajuPillars, inline: false });
+      }
+
       const embed = new EmbedBuilder()
         .setTitle("✨ 운세 및 사주 정보 저장 완료")
         .setDescription("입력하신 개인 운세 정보가 정상적으로 저장되었습니다.")
         .setColor(0x3498db)
-        .addFields(
-          { name: "📅 생년월일 (구분)", value: `${birthYear} ${birthMonth} ${birthDay} (${sajuFormat})`, inline: true },
-          { name: "⏰ 출생 시각", value: birthTime, inline: true },
-          { name: "⭐ 별자리", value: zodiacSign, inline: true }
-        )
+        .addFields(fields)
         .setFooter({ text: "이제 /운세받기 명령어나 매주 월요일 7:30 스케줄러로 운세를 받아보실 수 있습니다." })
         .setTimestamp();
 

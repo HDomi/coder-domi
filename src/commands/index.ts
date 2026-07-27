@@ -14,6 +14,9 @@ import { posting } from "./posting";
 import { autoPosting } from "./autoPosting";
 import { deletePost } from "./deletePost";
 import { stopPosting } from "./stopPosting";
+import { fortuneSetChannel } from "./fortuneSetChannel";
+import { fortuneSetInfo } from "./fortuneSetInfo";
+import { fortuneGet } from "./fortuneGet";
 import { Command } from "../types";
 
 export const commands: Command[] = [
@@ -33,4 +36,7 @@ export const commands: Command[] = [
   autoPosting,
   deletePost,
   stopPosting,
+  fortuneSetChannel,
+  fortuneSetInfo,
+  fortuneGet,
 ];

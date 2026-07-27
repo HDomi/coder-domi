@@ -16,6 +16,16 @@ export interface BlogPost {
   createdAt: string;
 }
 
+export interface FortuneUserInfo {
+  sajuFormat: string;
+  birthYear: string;
+  birthMonth: string;
+  birthDay: string;
+  birthTime: string;
+  zodiacSign: string;
+  updatedAt?: string;
+}
+
 const dbUrl = process.env.FIREBASE_DATABASE_URL;
 
 if (!dbUrl) {
@@ -142,5 +152,73 @@ export const firebaseClient = {
   async deletePost(uuid: string): Promise<void> {
     await db.ref(`posts/${uuid}`).remove();
     console.log(`🗑️ Firebase에서 포스팅 삭제 성공: ${uuid}`);
+  },
+
+  /**
+   * 운세 알림 디스코드 채널 ID를 저장합니다.
+   * 경로: fortune/config/channelId
+   */
+  async setFortuneChannel(channelId: string): Promise<void> {
+    await db.ref("fortune/config/channelId").set(channelId);
+    console.log(`✅ Firebase에 운세 알림 채널 ID 저장 성공: ${channelId}`);
+  },
+
+  /**
+   * 운세 알림 디스코드 채널 ID를 조회합니다.
+   * 경로: fortune/config/channelId
+   */
+  async getFortuneChannel(): Promise<string | null> {
+    try {
+      const snapshot = await db.ref("fortune/config/channelId").once("value");
+      return snapshot.val() || null;
+    } catch (error) {
+      console.error("⚠️ Firebase 운세 채널 ID 조회 실패:", error);
+      return null;
+    }
+  },
+
+  /**
+   * 운세용 사주/별자리 개인 정보를 저장합니다.
+   * 경로: fortune/config/userInfo
+   */
+  async setFortuneUserInfo(info: FortuneUserInfo): Promise<void> {
+    await db.ref("fortune/config/userInfo").set(info);
+    console.log("✅ Firebase에 운세 사용자 정보 저장 성공:", info);
+  },
+
+  /**
+   * 운세용 사주/별자리 개인 정보를 조회합니다.
+   * 경로: fortune/config/userInfo
+   */
+  async getFortuneUserInfo(): Promise<FortuneUserInfo | null> {
+    try {
+      const snapshot = await db.ref("fortune/config/userInfo").once("value");
+      return snapshot.val() || null;
+    } catch (error) {
+      console.error("⚠️ Firebase 운세 사용자 정보 조회 실패:", error);
+      return null;
+    }
+  },
+
+  /**
+   * 최근 주간 운세 발송 주차(e.g., "2026-W31")를 조회합니다.
+   * 경로: fortune/config/lastWeeklyFortuneWeek
+   */
+  async getLastWeeklyFortuneWeek(): Promise<string | null> {
+    try {
+      const snapshot = await db.ref("fortune/config/lastWeeklyFortuneWeek").once("value");
+      return snapshot.val() || null;
+    } catch (error) {
+      console.error("⚠️ Firebase 최근 운세 주차 조회 실패:", error);
+      return null;
+    }
+  },
+
+  /**
+   * 최근 주간 운세 발송 주차를 업데이트합니다.
+   * 경로: fortune/config/lastWeeklyFortuneWeek
+   */
+  async setLastWeeklyFortuneWeek(weekStr: string): Promise<void> {
+    await db.ref("fortune/config/lastWeeklyFortuneWeek").set(weekStr);
   },
 };

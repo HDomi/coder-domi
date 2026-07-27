@@ -2,9 +2,10 @@ import cron from "node-cron";
 import { Client } from "discord.js";
 import { firebaseClient } from "./firebase";
 import { runBlogPostingPipeline } from "./blogPipeline";
+import { runWeeklyFortunePipeline, getCurrentWeekDaysKst } from "./fortune/pipeline";
 
 export async function initScheduler(client: Client) {
-  console.log("⏰ 블로그 자동 포스팅 스케줄러를 등록합니다. (매일 오후 2시 KST 실행)");
+  console.log("⏰ 블로그 및 주간 운세 스케줄러를 등록합니다.");
 
   // KST 기준 현재 날짜와 시간 구하기 헬퍼
   const getKstInfo = () => {
@@ -100,6 +101,26 @@ export async function initScheduler(client: Client) {
         console.error("❌ [스케줄러] 자동 포스팅 실행 중 예기치 못한 에러 발생:", error);
         // 에러 시 롤백하여 수동/자가 복구가 감지할 수 있도록 함
         await firebaseClient.setLastAutoPostingDate("");
+      }
+    },
+    {
+      timezone: "Asia/Seoul",
+    },
+  );
+
+  // 3. 매주 월요일 아침 7시 30분(07:30 KST) 주간 운세 정기 자동 발송 스케줄링 등록
+  console.log("⏰ 주간 운세 자동 발송 스케줄러를 등록합니다. (매주 월요일 아침 7시 30분 KST 실행)");
+  cron.schedule(
+    "30 7 * * 1",
+    async () => {
+      console.log("🔔 [스케줄러] 매주 월요일 아침 7:30 주간 운세 자동 발송을 시작합니다...");
+      try {
+        const { weekCode } = getCurrentWeekDaysKst();
+        await firebaseClient.setLastWeeklyFortuneWeek(weekCode);
+        await runWeeklyFortunePipeline(client);
+        console.log("✅ [스케줄러] 주간 운세 발송을 성공적으로 완료했습니다.");
+      } catch (error: any) {
+        console.error("❌ [스케줄러] 주간 운세 발송 중 오류 발생:", error);
       }
     },
     {

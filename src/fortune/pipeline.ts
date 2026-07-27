@@ -165,8 +165,11 @@ ${daysInfoPrompt}
   };
 }
 
+const DIVIDER_MESSAGE = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+
 /**
- * 7개의 요일별 운세를 7개의 독립된 디스코드 메시지로 순차 발송합니다.
+ * 7개의 요일별 운세를 7개의 독립된 디스코드 메시지로 순차 발송한 후,
+ * 마지막에 구분선 메시지를 별도로 추가 발송합니다.
  */
 export async function sendWeeklyFortuneMessages(
   target: TextChannel | ChatInputCommandInteraction,
@@ -182,7 +185,7 @@ export async function sendWeeklyFortuneMessages(
     // 첫 번째 메시지에 헤더 + 월요일 메시지 전달
     for (let i = 0; i < result.days.length; i++) {
       const day = result.days[i];
-      let msgContent = day.content;
+      let msgContent = day.content.trim();
       if (i === 0) {
         msgContent = `${headerText}\n\n${msgContent}`;
       }
@@ -205,6 +208,9 @@ export async function sendWeeklyFortuneMessages(
       // 메시지간 짧은 딜레이
       await new Promise((resolve) => setTimeout(resolve, 600));
     }
+
+    // 월~일 7개 운세 메시지 출력이 모두 완료된 후 마지막에 추가 구분선 메시지 전송
+    await target.followUp({ content: DIVIDER_MESSAGE });
   } else {
     // 디스코드 TextChannel 스케줄러 발송
     await target.send({ content: headerText });
@@ -212,7 +218,7 @@ export async function sendWeeklyFortuneMessages(
 
     for (let i = 0; i < result.days.length; i++) {
       const day = result.days[i];
-      let msgContent = day.content;
+      let msgContent = day.content.trim();
 
       if (msgContent.length > 1980) {
         msgContent = msgContent.substring(0, 1975) + "\n...";
@@ -221,6 +227,9 @@ export async function sendWeeklyFortuneMessages(
       await target.send({ content: msgContent });
       await new Promise((resolve) => setTimeout(resolve, 600));
     }
+
+    // 월~일 7개 운세 메시지 출력이 모두 완료된 후 마지막에 추가 구분선 메시지 전송
+    await target.send({ content: DIVIDER_MESSAGE });
   }
 }
 

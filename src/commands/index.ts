@@ -17,6 +17,7 @@ import { stopPosting } from "./stopPosting";
 import { fortuneSetChannel } from "./fortuneSetChannel";
 import { fortuneSetInfo } from "./fortuneSetInfo";
 import { fortuneGet } from "./fortuneGet";
+import { todayFortune } from "./todayFortune";
 import { Command } from "../types";
 
 export const commands: Command[] = [
@@ -39,4 +40,5 @@ export const commands: Command[] = [
   fortuneSetChannel,
   fortuneSetInfo,
   fortuneGet,
+  todayFortune,
 ];

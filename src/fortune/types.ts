@@ -11,3 +11,10 @@ export interface WeeklyFortuneResult {
   days: DayFortune[]; // Array of 7 items (Mon ~ Sun)
   userInfo: FortuneUserInfo;
 }
+
+export interface TodayFortuneResult {
+  dateStr: string; // e.g. "2026-07-29"
+  dayName: string; // e.g. "수요일"
+  content: string; // Detailed today's fortune markdown text
+  userInfo: FortuneUserInfo;
+}

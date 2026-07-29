@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { TextChannel, ChatInputCommandInteraction } from "discord.js";
 import { firebaseClient, FortuneUserInfo } from "../firebase";
-import { WeeklyFortuneResult, DayFortune, TodayFortuneResult } from "./types";
+import { WeeklyFortuneResult, DayFortune, TodayFortuneResult, FortuneSearchResult } from "./types";
 import {
   getIljinForDate,
   parseIlganIndex,
@@ -490,4 +490,142 @@ export async function runTodayFortunePipeline(
     await sendTodayFortuneMessage(channel, fortuneResult);
   }
 }
+
+/**
+ * Gemini API를 호출하여 질문/검색어에 대한 맞춤형 사주 & 별자리 운세를 생성합니다.
+ */
+export async function generateFortuneSearch(
+  userInfo: FortuneUserInfo,
+  query: string
+): Promise<FortuneSearchResult> {
+  const today = getTodayKst();
+  const ai = getGenAI();
+
+  const ilganIdx = parseIlganIndex(userInfo.ilgan);
+  let ilganDisplay = userInfo.ilgan ? userInfo.ilgan : "미지정 (제공된 일진 기반 해석)";
+  if (ilganIdx !== null) {
+    const c = CHEONGAN[ilganIdx];
+    ilganDisplay = `${c.name}수/목/화/토/금 (${c.name}${c.hanja})`;
+    if (userInfo.ilgan) {
+      ilganDisplay = `${userInfo.ilgan} (천간: ${c.name}${c.hanja})`;
+    }
+  }
+
+  const iljin = getIljinForDate(today.dateStr);
+  let sipseongText = "";
+  if (ilganIdx !== null) {
+    sipseongText = ` ${getSipseongForDay(iljin, ilganIdx)}`;
+  }
+
+  const prompt = `
+[역할 정의]
+너는 명리학과 동양철학에 깊은 지식을 가진 전문 역학 상담가야. 
+아래 제공된 [사용자 사주 및 별자리 정보]와 [오늘의 만세력 일진] 데이터를 바탕으로, 사용자가 질문/검색한 특정 주제 [${query}]에 대해 십성(十星)과 오행의 상생상극 및 별자리 기운을 논리적으로 분석하여 맞춤형 운세 풀이 및 상담 답변을 작성해 줘.
+
+[사용자 사주 및 별자리 정보]
+- 생년월일: ${userInfo.birthYear}년 ${userInfo.birthMonth}월 ${userInfo.birthDay}일 (${userInfo.sajuFormat || "양력"})
+- 출생시: ${userInfo.birthTime}
+- 사주 일간: ${ilganDisplay}
+${userInfo.sajuPillars ? `- 사주 명식: ${userInfo.sajuPillars}` : ""}
+- 별자리: ${userInfo.zodiacSign}
+- 현재 연애 상태: **솔로 (Single)**
+
+[오늘 기준 시점]
+- 날짜: ${today.dateStr} (${today.dayName})
+- 일진: ${iljin.fullName}${sipseongText}
+
+[검색/질문 주제]
+- "${query}"
+
+[운세 분석 태도 및 톤앤매너]
+- **냉철하고 객관적인 혜안**: 사용자의 검색 주제("${query}")에 대해 무조건적인 덕담이나 기분 좋은 말만 하기보다는, 명리학적 기운과 현실적 흐름을 객관적이고 냉철하게 분석해 주세요.
+- **맞춤형 심층 분석**: 질문 주제와 직접 관련된 운세 흐름, 길한 기운과 흉한 기운, 시기적 유리함/불리함, 현실적인 대처 전략과 길잡이 조언을 입체적이고 정성껏 제시하세요.
+
+[작성 가이드라인]
+1. 질문 주제("${query}")에 집중하여 사용자가 궁금해하는 핵심 답변과 구체적 운세 해석을 명확히 제공할 것.
+2. 디스코드 마크다운 서식을 활용하여 가독성 있게 정리할 것.
+3. 1,000자~1,600자 내외로 상세하고 정성껏 작성할 것 (단, 디스코드 글자수 제한으로 인해 1,900자 초과 금지).
+
+응답은 지정된 JSON 형식으로 작성해 주세요.
+`;
+
+  const modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
+  const response = await ai.models.generateContent({
+    model: modelName,
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          content: { type: Type.STRING },
+        },
+        required: ["content"],
+      },
+    },
+  });
+
+  const rawText = response.text || "";
+  let parsed: any;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch (e: any) {
+    throw new Error(`Gemini 운세 검색 응답 파싱 실패: ${e.message}`);
+  }
+
+  return {
+    query,
+    dateStr: today.dateStr,
+    dayName: today.dayName,
+    content: parsed.content || "",
+    userInfo,
+  };
+}
+
+/**
+ * 운세 검색 메시지를 발송합니다.
+ */
+export async function sendFortuneSearchMessage(
+  interaction: ChatInputCommandInteraction,
+  result: FortuneSearchResult
+): Promise<void> {
+  const ilganStr = result.userInfo.ilgan ? ` / 일간: ${result.userInfo.ilgan}` : "";
+  const pillarsStr = result.userInfo.sajuPillars ? ` / 명식: ${result.userInfo.sajuPillars}` : "";
+  const headerText =
+    `🔮 **[맞춤 운세 검색: "${result.query}"]**\n` +
+    `👤 **사주 정보**: ${result.userInfo.birthYear} ${result.userInfo.birthMonth} ${result.userInfo.birthDay} (${result.userInfo.birthTime})${ilganStr}${pillarsStr} / ${result.userInfo.zodiacSign} [${result.userInfo.sajuFormat}]\n` +
+    `----------------------------------------`;
+
+  let msgContent = `${headerText}\n\n${result.content.trim()}`;
+
+  if (msgContent.length > 1980) {
+    msgContent = msgContent.substring(0, 1975) + "\n...";
+  }
+
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ content: msgContent });
+  } else {
+    await interaction.reply({ content: msgContent });
+  }
+}
+
+/**
+ * 운세 검색 파이프라인 전체를 실행하는 함수
+ */
+export async function runFortuneSearchPipeline(
+  query: string,
+  interaction: ChatInputCommandInteraction
+): Promise<void> {
+  const userInfo = await firebaseClient.getFortuneUserInfo();
+  if (!userInfo) {
+    throw new Error(
+      "❌ 사주 및 별자리 정보가 설정되지 않았습니다. 먼저 `/운세정보` 커맨드로 입력해 주세요."
+    );
+  }
+
+  const fortuneResult = await generateFortuneSearch(userInfo, query);
+  await sendFortuneSearchMessage(interaction, fortuneResult);
+}
+
 

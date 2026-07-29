@@ -18,3 +18,12 @@ export interface TodayFortuneResult {
   content: string; // Detailed today's fortune markdown text
   userInfo: FortuneUserInfo;
 }
+
+export interface FortuneSearchResult {
+  query: string;
+  dateStr: string;
+  dayName: string;
+  content: string;
+  userInfo: FortuneUserInfo;
+}
+

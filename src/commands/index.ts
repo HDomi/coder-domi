@@ -18,6 +18,7 @@ import { fortuneSetChannel } from "./fortuneSetChannel";
 import { fortuneSetInfo } from "./fortuneSetInfo";
 import { fortuneGet } from "./fortuneGet";
 import { todayFortune } from "./todayFortune";
+import { fortuneSearch } from "./fortuneSearch";
 import { Command } from "../types";
 
 export const commands: Command[] = [
@@ -41,4 +42,6 @@ export const commands: Command[] = [
   fortuneSetInfo,
   fortuneGet,
   todayFortune,
+  fortuneSearch,
 ];
+

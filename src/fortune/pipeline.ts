@@ -164,7 +164,7 @@ ${daysInfoPrompt}
    - 💰 **금전 & 재물운**: 지출/수입 흐름, 투자/재물 기회, 주의해야 할 지출
    - 🍀 **행운 요소**: 행운의 색상, 행운의 숫자, 행운의 아이템, 행운의 방위
    - 💡 **오늘의 총평 및 힐링 조언**: 마음가짐 및 하루를 다스리는 팁
-4. 각 요일의 content는 디스코드 메시지 1개로 발송되므로, 읽는 이가 몰입감을 느낄 수 있도록 1,200자~1,800자 내외로 정성껏 길고 상세하게 작성하세요. (단, 1,900자 초과 금지)
+4. 각 요일의 content는 디스코드 메시지로 발송되며, 2,000자가 넘을 경우 자동으로 여러 메시지로 분할 발송되므로 읽는 이가 몰입감을 느낄 수 있도록 1,200자~1,800자 내외로 정성껏 길고 상세하게 작성하세요.
 
 응답은 지정된 JSON 형식으로 작성해 주세요.
 `;
@@ -282,7 +282,7 @@ ${userInfo.sajuPillars ? `- 사주 명식: ${userInfo.sajuPillars}` : ""}
    - 🍀 **오늘의 행운 요소**:
      - 🎨 행운의 색상 / 🔢 행운의 숫자 / 🧭 행운의 방위 / 🎒 행운의 아이템 / 🍱 행운의 음식
    - 💡 **오늘의 총평 및 힐링 조언**: 오늘 하루를 지혜롭게 보내기 위한 총평 및 실천 조언
-4. 오늘 운세를 매우 상세하고 깊이 있게 제공하기 위해, 1,400자~1,800자 내외로 정성껏 길고 상세하게 작성하세요. (단, 디스코드 글자수 제한으로 인해 1,900자 초과 금지)
+4. 오늘 운세를 매우 상세하고 깊이 있게 제공하기 위해, 1,400자~1,800자 내외로 정성껏 길고 상세하게 작성하세요. (디스코드 2,000자 제한 초과 시 자동으로 여러 메시지로 분할 발송됩니다.)
 
 응답은 지정된 JSON 형식으로 작성해 주세요.
 `;
@@ -323,8 +323,99 @@ ${userInfo.sajuPillars ? `- 사주 명식: ${userInfo.sajuPillars}` : ""}
 const DIVIDER_MESSAGE = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 
 /**
- * 7개의 요일별 운세를 7개의 독립된 디스코드 메시지로 순차 발송한 후,
- * 마지막에 구분선 메시지를 별도로 추가 발송합니다.
+ * 디스코드 2,000자 제한을 초과하는 긴 텍스트를 줄 바꿈 또는 단어 단위로 1,900자 이하의 조각들로 분할합니다.
+ */
+export function splitMessage(text: string, maxLength: number = 1900): string[] {
+  if (!text || text.length <= maxLength) {
+    return [text || ""];
+  }
+
+  const chunks: string[] = [];
+  const lines = text.split("\n");
+  let currentChunk = "";
+
+  for (const line of lines) {
+    if ((currentChunk ? currentChunk.length + 1 + line.length : line.length) <= maxLength) {
+      currentChunk = currentChunk ? `${currentChunk}\n${line}` : line;
+    } else {
+      if (currentChunk) {
+        chunks.push(currentChunk);
+        currentChunk = "";
+      }
+
+      if (line.length <= maxLength) {
+        currentChunk = line;
+      } else {
+        const words = line.split(" ");
+        for (const word of words) {
+          if ((currentChunk ? currentChunk.length + 1 + word.length : word.length) <= maxLength) {
+            currentChunk = currentChunk ? `${currentChunk} ${word}` : word;
+          } else {
+            if (currentChunk) {
+              chunks.push(currentChunk);
+              currentChunk = "";
+            }
+            if (word.length <= maxLength) {
+              currentChunk = word;
+            } else {
+              let remaining = word;
+              while (remaining.length > maxLength) {
+                chunks.push(remaining.substring(0, maxLength));
+                remaining = remaining.substring(maxLength);
+              }
+              currentChunk = remaining;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (currentChunk) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
+}
+
+/**
+ * 디스코드 2,000자 제한을 초과하는 긴 메시지를 여러 개의 메시지로 분할하여 순차 발송합니다.
+ */
+export async function sendSplitMessages(
+  target: TextChannel | ChatInputCommandInteraction,
+  fullText: string
+): Promise<void> {
+  const chunks = splitMessage(fullText, 1900);
+
+  if (target instanceof ChatInputCommandInteraction) {
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      if (i === 0) {
+        if (target.deferred || target.replied) {
+          await target.editReply({ content: chunk });
+        } else {
+          await target.reply({ content: chunk });
+        }
+      } else {
+        await target.followUp({ content: chunk });
+      }
+      if (i < chunks.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+  } else {
+    for (let i = 0; i < chunks.length; i++) {
+      await target.send({ content: chunks[i] });
+      if (i < chunks.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+  }
+}
+
+/**
+ * 7개의 요일별 운세를 디스코드 메시지로 순차 발송한 후,
+ * 마지막에 구분선 메시지를 별도로 추가 발송합니다. (2,000자 초과 시 메세지 자동 분할)
  */
 export async function sendWeeklyFortuneMessages(
   target: TextChannel | ChatInputCommandInteraction,
@@ -338,8 +429,7 @@ export async function sendWeeklyFortuneMessages(
     `----------------------------------------`;
 
   if (target instanceof ChatInputCommandInteraction) {
-    // 슬래시 커맨드 인터랙션 대화형 발송
-    // 첫 번째 메시지에 헤더 + 월요일 메시지 전달
+    let isFirstMessage = true;
     for (let i = 0; i < result.days.length; i++) {
       const day = result.days[i];
       let msgContent = day.content.trim();
@@ -347,51 +437,44 @@ export async function sendWeeklyFortuneMessages(
         msgContent = `${headerText}\n\n${msgContent}`;
       }
 
-      // 글자수 안전 차단 (2000자 초과시 자르기)
-      if (msgContent.length > 1980) {
-        msgContent = msgContent.substring(0, 1975) + "\n...";
-      }
-
-      if (i === 0) {
-        if (target.deferred || target.replied) {
-          await target.editReply({ content: msgContent });
+      const chunks = splitMessage(msgContent, 1900);
+      for (const chunk of chunks) {
+        if (isFirstMessage) {
+          if (target.deferred || target.replied) {
+            await target.editReply({ content: chunk });
+          } else {
+            await target.reply({ content: chunk });
+          }
+          isFirstMessage = false;
         } else {
-          await target.reply({ content: msgContent });
+          await target.followUp({ content: chunk });
         }
-      } else {
-        await target.followUp({ content: msgContent });
+        await new Promise((resolve) => setTimeout(resolve, 600));
       }
-
-      // 메시지간 짧은 딜레이
-      await new Promise((resolve) => setTimeout(resolve, 600));
     }
 
-    // 월~일 7개 운세 메시지 출력이 모두 완료된 후 마지막에 추가 구분선 메시지 전송
     await target.followUp({ content: DIVIDER_MESSAGE });
   } else {
-    // 디스코드 TextChannel 스케줄러 발송
-    await target.send({ content: headerText });
-    await new Promise((resolve) => setTimeout(resolve, 600));
-
     for (let i = 0; i < result.days.length; i++) {
       const day = result.days[i];
       let msgContent = day.content.trim();
-
-      if (msgContent.length > 1980) {
-        msgContent = msgContent.substring(0, 1975) + "\n...";
+      if (i === 0) {
+        msgContent = `${headerText}\n\n${msgContent}`;
       }
 
-      await target.send({ content: msgContent });
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      const chunks = splitMessage(msgContent, 1900);
+      for (const chunk of chunks) {
+        await target.send({ content: chunk });
+        await new Promise((resolve) => setTimeout(resolve, 600));
+      }
     }
 
-    // 월~일 7개 운세 메시지 출력이 모두 완료된 후 마지막에 추가 구분선 메시지 전송
     await target.send({ content: DIVIDER_MESSAGE });
   }
 }
 
 /**
- * 오늘 운세 메시지를 발송합니다.
+ * 오늘 운세 메시지를 발송합니다. (2,000자 초과 시 메세지 자동 분할)
  */
 export async function sendTodayFortuneMessage(
   target: TextChannel | ChatInputCommandInteraction,
@@ -404,21 +487,8 @@ export async function sendTodayFortuneMessage(
     `👤 **사주 정보**: ${result.userInfo.birthYear} ${result.userInfo.birthMonth} ${result.userInfo.birthDay} (${result.userInfo.birthTime})${ilganStr}${pillarsStr} / ${result.userInfo.zodiacSign} [${result.userInfo.sajuFormat}]\n` +
     `----------------------------------------`;
 
-  let msgContent = `${headerText}\n\n${result.content.trim()}`;
-
-  if (msgContent.length > 1980) {
-    msgContent = msgContent.substring(0, 1975) + "\n...";
-  }
-
-  if (target instanceof ChatInputCommandInteraction) {
-    if (target.deferred || target.replied) {
-      await target.editReply({ content: msgContent });
-    } else {
-      await target.reply({ content: msgContent });
-    }
-  } else {
-    await target.send({ content: msgContent });
-  }
+  const fullText = `${headerText}\n\n${result.content.trim()}`;
+  await sendSplitMessages(target, fullText);
 }
 
 /**
@@ -544,7 +614,7 @@ ${userInfo.sajuPillars ? `- 사주 명식: ${userInfo.sajuPillars}` : ""}
 [작성 가이드라인]
 1. 질문 주제("${query}")에 집중하여 사용자가 궁금해하는 핵심 답변과 구체적 운세 해석을 명확히 제공할 것.
 2. 디스코드 마크다운 서식을 활용하여 가독성 있게 정리할 것.
-3. 1,000자~1,600자 내외로 상세하고 정성껏 작성할 것 (단, 디스코드 글자수 제한으로 인해 1,900자 초과 금지).
+3. 1,000자~1,600자 내외로 상세하고 정성껏 작성할 것 (디스코드 2,000자 제한 초과 시 자동으로 여러 메시지로 분할 발송됩니다).
 
 응답은 지정된 JSON 형식으로 작성해 주세요.
 `;
@@ -584,7 +654,7 @@ ${userInfo.sajuPillars ? `- 사주 명식: ${userInfo.sajuPillars}` : ""}
 }
 
 /**
- * 운세 검색 메시지를 발송합니다.
+ * 운세 검색 메시지를 발송합니다. (2,000자 초과 시 메세지 자동 분할)
  */
 export async function sendFortuneSearchMessage(
   interaction: ChatInputCommandInteraction,
@@ -597,17 +667,8 @@ export async function sendFortuneSearchMessage(
     `👤 **사주 정보**: ${result.userInfo.birthYear} ${result.userInfo.birthMonth} ${result.userInfo.birthDay} (${result.userInfo.birthTime})${ilganStr}${pillarsStr} / ${result.userInfo.zodiacSign} [${result.userInfo.sajuFormat}]\n` +
     `----------------------------------------`;
 
-  let msgContent = `${headerText}\n\n${result.content.trim()}`;
-
-  if (msgContent.length > 1980) {
-    msgContent = msgContent.substring(0, 1975) + "\n...";
-  }
-
-  if (interaction.deferred || interaction.replied) {
-    await interaction.editReply({ content: msgContent });
-  } else {
-    await interaction.reply({ content: msgContent });
-  }
+  const fullText = `${headerText}\n\n${result.content.trim()}`;
+  await sendSplitMessages(interaction, fullText);
 }
 
 /**

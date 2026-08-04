@@ -8,6 +8,8 @@ import { getWorkspaceContext, executeShellCommand } from "./utils";
 // ─── 큐 아이템 상태 정의 ───
 type QueueItemStatus = "waiting" | "processing" | "done" | "error";
 
+
+
 export interface QueueItem {
   id: number;
   channelId: string;

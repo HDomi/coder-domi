@@ -1,6 +1,6 @@
 import { Client, GatewayIntentBits, Interaction, REST, Routes } from "discord.js";
+import express from "express";
 import * as dotenv from "dotenv";
-import { dbManager } from "./db";
 import { initLogger } from "./logger";
 import { commands } from "./commands";
 import { initScheduler } from "./scheduler";
@@ -9,6 +9,31 @@ dotenv.config();
 
 // 글로벌 console.log/error 우회 및 파일 로깅 초기화
 initLogger();
+
+const PORT = Number(process.env.PORT) || 3000;
+
+/**
+ * Render Web Service 헬스체크용 HTTP 서버를 시작합니다.
+ */
+function startHealthServer(): void {
+  const app = express();
+
+  app.get("/", (_req, res) => {
+    res.status(200).send("OK");
+  });
+
+  app.get("/health", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      uptime: process.uptime(),
+      discordReady: client.isReady(),
+    });
+  });
+
+  app.listen(PORT, () => {
+    console.log(`🩺 헬스체크 서버 가동: port ${PORT}`);
+  });
+}
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
@@ -19,7 +44,7 @@ const commandMap = new Map(commands.map((cmd) => [cmd.data.name, cmd]));
 const commandsJson = commands.map((cmd) => cmd.data.toJSON());
 
 client.once("ready", async (readyClient) => {
-  console.log(`🚀 Coder-Domi ChatOps 에이전트 가동 상태 정상: ${readyClient.user?.tag}`);
+  console.log(`🚀 Domi ChatOps 에이전트 가동 상태 정상: ${readyClient.user?.tag}`);
 
   const token = process.env.DISCORD_TOKEN;
   const clientId = process.env.CLIENT_ID;
@@ -58,32 +83,8 @@ client.on("interactionCreate", async (interaction: Interaction) => {
     return;
   }
 
-  // 사전 조건(Preconditions) 검사
-  let session = null;
-  if (command.requiresSession) {
-    session = dbManager.getSession(interaction.channelId);
-    if (!session) {
-      return interaction.reply({
-        content:
-          "❌ 활성화된 개발 세션이 없습니다. 먼저 `/연결 [앱이름]` 명령어로 채널을 연결해 주세요.",
-        ephemeral: true,
-      });
-    }
-  }
-
-  if (command.requiresSpec) {
-    // requiresSpec이 true인 경우 requiresSession도 참이어야 하므로 session이 존재합니다.
-    if (!session || !session.spec_summary) {
-      return interaction.reply({
-        content:
-          "❌ 활성화된 기획 명세서가 부재합니다. 먼저 `/기획` 명령어로 프로젝트 골격을 설명해 주세요.",
-        ephemeral: true,
-      });
-    }
-  }
-
   try {
-    await command.execute(interaction, session || undefined);
+    await command.execute(interaction);
   } catch (error: any) {
     console.error(`❌ 커맨드 실행 중 에러 발생 (${commandName}):`, error);
     const errorMsg = `❌ 명령어 실행 중 오류가 발생했습니다: ${error.message}`;
@@ -97,4 +98,5 @@ client.on("interactionCreate", async (interaction: Interaction) => {
   }
 });
 
+startHealthServer();
 client.login(process.env.DISCORD_TOKEN);

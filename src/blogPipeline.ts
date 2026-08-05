@@ -2,7 +2,6 @@ import { Client, EmbedBuilder, TextChannel } from "discord.js";
 import { firebaseClient, BlogPost } from "./firebase";
 import { randomUUID } from "crypto";
 import { AI_CONFIG } from "./config";
-import { executeWithOllamaLock } from "./ai/lock";
 import { GoogleGenAI, Type } from "@google/genai";
 import { triggerBlogDeploy } from "./git";
 import { BLOG_CONFIG } from "./blogConfig";
@@ -27,58 +26,6 @@ function getKstTimeString(): string {
   const kstOffset = 9 * 60 * 60 * 1000; // KST는 UTC+9
   const kstTime = new Date(now + kstOffset);
   return kstTime.toISOString().replace("Z", "+09:00");
-}
-
-// Ollama 임베딩 호출 함수 (폴백 대응)
-export async function getOllamaEmbedding(text: string, signal?: AbortSignal): Promise<number[]> {
-  return executeWithOllamaLock(async () => {
-    const aiApiUrl = process.env.AI_API_URL || "http://localhost:11434";
-    const cleanUrl = aiApiUrl.endsWith("/") ? aiApiUrl.slice(0, -1) : aiApiUrl;
-
-    // 1단계: /api/embeddings 시도
-    try {
-      const response = await fetch(`${cleanUrl}/api/embeddings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: EMBED_MODEL,
-          prompt: text,
-        }),
-        signal,
-      });
-
-      if (response.ok) {
-        const data = (await response.json()) as any;
-        if (data.embedding && Array.isArray(data.embedding)) {
-          return data.embedding;
-        }
-      }
-    } catch (error) {
-      // /api/embeddings가 실패할 시 다음 폴백으로 진행
-    }
-
-    // 2단계: /api/embed 폴백 시도
-    const response = await fetch(`${cleanUrl}/api/embed`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: EMBED_MODEL,
-        input: text,
-      }),
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Ollama 임베딩 API 실패: ${response.statusText}`);
-    }
-
-    const data = (await response.json()) as any;
-    if (data.embeddings && Array.isArray(data.embeddings[0])) {
-      return data.embeddings[0];
-    }
-
-    throw new Error("Ollama 응답에서 임베딩 벡터를 추출하지 못했습니다.");
-  });
 }
 
 // 코사인 유사도 연산 함수
@@ -109,6 +56,34 @@ function getGenAI(): GoogleGenAI {
     aiInstance = new GoogleGenAI({ apiKey });
   }
   return aiInstance;
+}
+
+/**
+ * Gemini 임베딩 API로 텍스트 벡터를 생성합니다.
+ * @param {string} text - 임베딩할 텍스트
+ * @param {AbortSignal} [signal] - 취소 시그널
+ * @returns {Promise<number[]>} 임베딩 벡터
+ */
+export async function getGeminiEmbedding(text: string, signal?: AbortSignal): Promise<number[]> {
+  if (signal?.aborted) {
+    throw new Error("포스팅 생성이 중단되었습니다.");
+  }
+
+  const response = await getGenAI().models.embedContent({
+    model: EMBED_MODEL,
+    contents: text,
+    config: {
+      taskType: "SEMANTIC_SIMILARITY",
+      outputDimensionality: 768,
+      abortSignal: signal,
+    },
+  });
+
+  const values = response.embeddings?.[0]?.values;
+  if (!values || !Array.isArray(values)) {
+    throw new Error("Gemini 응답에서 임베딩 벡터를 추출하지 못했습니다.");
+  }
+  return values;
 }
 
 // Gemini 채팅 API 호출 옵션 인터페이스
@@ -312,7 +287,7 @@ export async function runBlogPostingPipeline(
             await onProgress(
               `2단계: 주제 후보군 유사도 검사 중... ("${theme.length > 20 ? theme.substring(0, 20) + "..." : theme}")`,
             );
-          const themeEmbedding = await getOllamaEmbedding(theme, signal);
+          const themeEmbedding = await getGeminiEmbedding(theme, signal);
 
           let maxSim = -1;
           let matchPost: BlogPost | null = null;
@@ -455,7 +430,7 @@ ${pastContext}
     console.log(`[최종 벡터화] 새로운 아티클의 타이틀 및 요약을 임베딩합니다...`);
     if (onProgress) await onProgress("4단계: 완료된 에세이 요약본 벡터화(Embedding) 진행 중...");
     const embedText = `${title} ${summary || ""}`.trim();
-    const finalEmbedding = await getOllamaEmbedding(embedText, signal);
+    const finalEmbedding = await getGeminiEmbedding(embedText, signal);
 
     // 5. Firebase 데이터 구성 및 적재
     const newPost: BlogPost = {

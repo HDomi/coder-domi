@@ -3,5 +3,5 @@ node_modules
 .env.development
 .DS_Store
 dist/
-chatops.db
 firebase-key.json
+chatops.db

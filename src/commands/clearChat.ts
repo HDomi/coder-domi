@@ -5,7 +5,6 @@ export const clearChat: Command = {
   data: new SlashCommandBuilder()
     .setName("채팅삭제")
     .setDescription("현재 채널의 최근 14일 이내 메시지들을 모두 일괄 삭제합니다."),
-  requiresSession: false,
   async execute(interaction: ChatInputCommandInteraction) {
     const channel = interaction.channel;
     if (

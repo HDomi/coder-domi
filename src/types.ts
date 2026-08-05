@@ -4,7 +4,6 @@ import {
   SlashCommandSubcommandsOnlyBuilder,
   SlashCommandOptionsOnlyBuilder,
 } from "discord.js";
-import { Session } from "./db";
 
 export interface Command {
   data:
@@ -12,7 +11,5 @@ export interface Command {
     | SlashCommandSubcommandsOnlyBuilder
     | SlashCommandOptionsOnlyBuilder
     | Omit<SlashCommandBuilder, "addSubcommand" | "addSubcommandGroup">;
-  requiresSession?: boolean;
-  requiresSpec?: boolean;
-  execute(interaction: ChatInputCommandInteraction, session?: Session): Promise<any>;
+  execute(interaction: ChatInputCommandInteraction): Promise<any>;
 }

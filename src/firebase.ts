@@ -34,8 +34,51 @@ if (!dbUrl) {
   throw new Error("❌ 환경변수 FIREBASE_DATABASE_URL이 설정되지 않았습니다.");
 }
 
+/**
+ * 서비스 계정 JSON 문자열을 파싱합니다. (원본 JSON / Base64 모두 허용)
+ * @param {string} raw - 환경변수 원문
+ * @returns {Record<string, unknown>} 서비스 계정 객체
+ */
+function parseServiceAccountJson(raw: string): Record<string, unknown> {
+  const trimmed = raw.trim();
+
+  // 1) 원본 JSON
+  if (trimmed.startsWith("{")) {
+    return JSON.parse(trimmed);
+  }
+
+  // 2) Base64(JSON)
+  const decoded = Buffer.from(trimmed, "base64").toString("utf-8").trim();
+  if (!decoded.startsWith("{")) {
+    throw new Error("Base64 디코딩 결과가 JSON 객체가 아닙니다.");
+  }
+  return JSON.parse(decoded);
+}
+
+/**
+ * Firebase Admin용 서비스 계정인지 검증하고 private_key 줄바꿈을 보정합니다.
+ * @param {Record<string, unknown>} account - 파싱된 계정 객체
+ * @returns {Record<string, unknown>} 검증된 서비스 계정
+ */
+function normalizeServiceAccount(account: Record<string, unknown>): Record<string, unknown> {
+  const privateKey = account.private_key;
+  if (typeof privateKey !== "string" || !privateKey.includes("PRIVATE KEY")) {
+    throw new Error(
+      "FIREBASE_SERVICE_ACCOUNT_JSON에 Admin SDK 서비스 계정 키가 필요합니다. " +
+        "Firebase Console → 프로젝트 설정 → 서비스 계정 → '새 비공개 키 생성'으로 받은 JSON을 넣으세요. " +
+        "(apiKey/authDomain 이 있는 웹 클라이언트 설정은 사용할 수 없습니다.)",
+    );
+  }
+
+  // Render 등에서 \\n 으로 들어온 private_key 줄바꿈 복원
+  return {
+    ...account,
+    private_key: privateKey.replace(/\\n/g, "\n"),
+  };
+}
+
 // 서비스 계정 키 파일 로드
-let serviceAccount: any = null;
+let serviceAccount: Record<string, unknown> | null = null;
 
 const envJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 const envPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
@@ -43,32 +86,37 @@ const defaultPath = path.resolve(__dirname, "../firebase-key.json");
 
 if (envJson) {
   try {
-    serviceAccount = JSON.parse(
-      Buffer.from(envJson, 'base64').toString('utf-8')
-    );
+    serviceAccount = normalizeServiceAccount(parseServiceAccountJson(envJson));
   } catch (e: any) {
-    console.error("❌ FIREBASE_SERVICE_ACCOUNT_JSON 파싱 실패:", e.message);
+    console.error("❌ FIREBASE_SERVICE_ACCOUNT_JSON 파싱/검증 실패:", e.message);
+    throw e;
   }
 } else if (envPath && fs.existsSync(envPath)) {
   try {
-    serviceAccount = JSON.parse(fs.readFileSync(envPath, "utf-8"));
+    serviceAccount = normalizeServiceAccount(
+      JSON.parse(fs.readFileSync(envPath, "utf-8")),
+    );
   } catch (e: any) {
     console.error(`❌ FIREBASE_SERVICE_ACCOUNT_PATH (${envPath}) 읽기 실패:`, e.message);
+    throw e;
   }
 } else if (fs.existsSync(defaultPath)) {
   try {
-    serviceAccount = JSON.parse(fs.readFileSync(defaultPath, "utf-8"));
+    serviceAccount = normalizeServiceAccount(
+      JSON.parse(fs.readFileSync(defaultPath, "utf-8")),
+    );
   } catch (e: any) {
     console.error("❌ 프로젝트 루트의 firebase-key.json 읽기 실패:", e.message);
+    throw e;
   }
 }
 
 if (!serviceAccount) {
   throw new Error(
     "❌ Firebase 서비스 계정 키를 찾을 수 없습니다. 다음 방법 중 하나를 선택해 주세요:\n" +
-      "1. 다운로드 받은 JSON 키 파일을 프로젝트 루트 디렉토리에 'firebase-key.json' 이라는 이름으로 저장\n" +
+      "1. 서비스 계정 키 JSON을 프로젝트 루트에 'firebase-key.json'으로 저장\n" +
       "2. 환경변수 'FIREBASE_SERVICE_ACCOUNT_PATH'에 키 파일 절대 경로 지정\n" +
-      "3. 환경변수 'FIREBASE_SERVICE_ACCOUNT_JSON'에 키 JSON 문자열 지정",
+      "3. 환경변수 'FIREBASE_SERVICE_ACCOUNT_JSON'에 서비스 계정 JSON(또는 Base64) 지정",
   );
 }
 

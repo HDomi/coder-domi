@@ -86,6 +86,80 @@ export async function getGeminiEmbedding(text: string, signal?: AbortSignal): Pr
   return values;
 }
 
+/**
+ * 배열에서 항목을 무작위로 하나 고릅니다.
+ * @param {T[]} items - 후보 배열
+ * @returns {T} 선택된 항목
+ */
+function pickRandom<T>(items: T[]): T {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+/**
+ * 본문 앞부분에서 마크다운 헤더를 제외한 도입 텍스트를 추출합니다.
+ * @param {string} content - 마크다운 본문
+ * @returns {string} 도입부 텍스트
+ */
+function getOpeningProse(content: string): string {
+  const lines = content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const prose: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith("#") || line.startsWith(">") || line.startsWith("---")) {
+      continue;
+    }
+    prose.push(line);
+    if (prose.join(" ").length >= 220) break;
+  }
+  return prose.join(" ").slice(0, 280);
+}
+
+/**
+ * 상투적인 AI 자기소개 오프닝인지 판별합니다.
+ * @param {string} content - 본문
+ * @returns {boolean} 금지 패턴 포함 여부
+ */
+function hasBannedOpening(content: string): boolean {
+  const opening = getOpeningProse(content);
+  return BLOG_CONFIG.bannedOpeningPatterns.some((pattern) => opening.includes(pattern));
+}
+
+/**
+ * 최근 글 제목에서 남발 키워드·핵심어를 모아 피칭 금지 목록을 만듭니다.
+ * @param {BlogPost[]} pastPosts - 과거 포스트
+ * @returns {string} 프롬프트용 금지 키워드 블록
+ */
+function buildBannedKeywordsList(pastPosts: BlogPost[]): string {
+  const recentTitles = pastPosts.slice(-15).map((post) => post.title || "");
+  const hits = new Set<string>();
+
+  for (const word of BLOG_CONFIG.overusedTitleWords) {
+    if (recentTitles.some((title) => title.includes(word))) {
+      hits.add(word);
+    }
+  }
+
+  // 최근 제목에 반복된 2글자 이상 한글 토큰도 참고용으로 일부 추가
+  const tokenCount = new Map<string, number>();
+  for (const title of recentTitles) {
+    for (const token of title.match(/[가-힣]{2,}/g) || []) {
+      tokenCount.set(token, (tokenCount.get(token) || 0) + 1);
+    }
+  }
+  for (const [token, count] of tokenCount) {
+    if (count >= 3) hits.add(token);
+  }
+
+  if (hits.size === 0) {
+    return `[제목 남발 금지 단어]\n${BLOG_CONFIG.overusedTitleWords.map((w) => `- ${w}`).join("\n")}`;
+  }
+
+  return `[최근 글에서 피해야 할 키워드]\n${[...hits].map((w) => `- ${w}`).join("\n")}`;
+}
+
 // Gemini 채팅 API 호출 옵션 인터페이스
 interface GeminiOptions {
   jsonMode?: boolean;
@@ -245,8 +319,11 @@ export async function runBlogPostingPipeline(
           ? `[피해야 할 제외 주제 목록]\n${rejectedThemes.map((t) => `- ${t}`).join("\n")}`
           : "";
 
+      const bannedKeywordsList = buildBannedKeywordsList(pastPosts);
+
       const themePrompt = BLOG_CONFIG.themePitching.userPromptTemplate
         .replace("{{pastPostsList}}", pastPostsList)
+        .replace("{{bannedKeywordsList}}", bannedKeywordsList)
         .replace("{{rejectedThemesList}}", rejectedThemesList);
 
       let responseContent = "";
@@ -265,6 +342,8 @@ export async function runBlogPostingPipeline(
             required: ["themes"],
           },
           systemInstruction: BLOG_CONFIG.themePitching.systemInstruction,
+          temperature: 0.95,
+          topP: 0.95,
           signal,
         });
         const parsed = JSON.parse(responseContent);
@@ -344,7 +423,7 @@ export async function runBlogPostingPipeline(
       console.warn(
         "⚠️ 최대 시도 횟수 초과 혹은 테마 채택 실패. 임의의 기본 철학적 주제로 우회합니다.",
       );
-      selectedTheme = "컴파일러 최적화와 인간 습관의 재형성 과정에 대하여";
+      selectedTheme = "읽지 않은 알림이 쌓이는 밤에, 응답을 미루는 버릇";
       pastContext = "";
       if (onProgress) await onProgress("⚠️ 테마 채택 실패로 기본 주제로 우회합니다.");
     }
@@ -355,16 +434,26 @@ export async function runBlogPostingPipeline(
     if (onProgress) await onProgress(`2단계 완료: 최종 주제 채택 - "${selectedTheme}"`);
 
     // 3. 풀 에세이 아티클 작성
+    const openingMode = pickRandom(BLOG_CONFIG.openingModes);
+    const stance = pickRandom(BLOG_CONFIG.stances);
+    console.log(`[글작성] 오프닝 모드: ${openingMode}`);
+    console.log(`[글작성] 스탠스: ${stance}`);
+
     const pastContextSection = pastContext
-      ? `특히 당신이 예전에 썼던 다음 생각(과거 글의 요약)과 자연스럽게 연결하거나 발전시켜 1,500자 이상의 깊이 있고 친근한 수필을 완성해 주세요:
+      ? `과거 글과 느슨히 이어가도 된다. 다만 같은 결론("불완전함이 아름답다")으로 합치지 말고, 이번 스탠스를 우선한다.
 [과거 글 요약]
 ${pastContext}
 `
       : "";
 
+    const bannedOpeningsList = `[금지 오프닝/상투 문구]\n${BLOG_CONFIG.bannedOpeningPatterns.map((p) => `- ${p}`).join("\n")}`;
+
     const articlePrompt = BLOG_CONFIG.articleWriting.userPromptTemplate
       .replace("{{selectedTheme}}", selectedTheme)
-      .replace("{{pastContextSection}}", pastContextSection);
+      .replace("{{pastContextSection}}", pastContextSection)
+      .replace("{{openingMode}}", openingMode)
+      .replace("{{stance}}", stance)
+      .replace("{{bannedOpeningsList}}", bannedOpeningsList);
 
     const articlePersona = BLOG_CONFIG.articleWriting.systemInstruction;
 
@@ -388,7 +477,7 @@ ${pastContext}
         required: ["title", "summary", "content", "tags"],
       },
       systemInstruction: articlePersona,
-      temperature: 0.88,
+      temperature: 0.95,
       topP: 0.95,
       signal,
     });
@@ -401,11 +490,66 @@ ${pastContext}
       throw new Error(`에세이 생성 응답을 JSON으로 읽을 수 없습니다: ${e.message}`);
     }
 
-    const { title, summary, content, tags } = parsedArticle;
+    let { title, summary, content, tags } = parsedArticle;
     if (!title || !content) {
       throw new Error(
         "생성된 포스트에 필수 데이터(title, content)가 유실되어 업로드를 중단합니다.",
       );
+    }
+
+    // 상투 오프닝이면 1회 재작성
+    if (hasBannedOpening(content)) {
+      console.warn("⚠️ 상투 오프닝 감지. 에세이 1회 재작성을 시도합니다...");
+      if (onProgress) await onProgress("3단계 보정: 상투 오프닝 감지 → 재작성 중...");
+
+      const rewritePrompt = BLOG_CONFIG.articleWriting.rewriteUserPromptTemplate
+        .replace("{{selectedTheme}}", selectedTheme)
+        .replace("{{openingMode}}", openingMode)
+        .replace("{{stance}}", stance)
+        .replace("{{bannedOpeningsList}}", bannedOpeningsList)
+        .replace("{{title}}", title)
+        .replace("{{content}}", content);
+
+      if (signal.aborted) throw new Error("포스팅 생성이 중단되었습니다.");
+      const rewriteResponse = await callGeminiChat(rewritePrompt, {
+        jsonMode: true,
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            summary: { type: Type.STRING },
+            content: { type: Type.STRING },
+            tags: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+          },
+          required: ["title", "summary", "content", "tags"],
+        },
+        systemInstruction: BLOG_CONFIG.articleWriting.rewriteSystemInstruction,
+        temperature: 0.9,
+        topP: 0.95,
+        signal,
+      });
+
+      try {
+        const rewritten = JSON.parse(rewriteResponse);
+        if (rewritten.title && rewritten.content) {
+          title = rewritten.title;
+          summary = rewritten.summary || summary;
+          content = rewritten.content;
+          if (Array.isArray(rewritten.tags) && rewritten.tags.length > 0) {
+            tags = rewritten.tags;
+          }
+          if (hasBannedOpening(content)) {
+            console.warn("⚠️ 재작성 후에도 상투 오프닝이 남았습니다. 그대로 진행합니다.");
+          } else {
+            console.log("✅ 재작성으로 상투 오프닝을 제거했습니다.");
+          }
+        }
+      } catch (e: any) {
+        console.error(`⚠️ 재작성 JSON 파싱 실패. 원본 초고를 유지합니다: ${e.message}`);
+      }
     }
 
     // tags 변환 (string[] -> Record<string, boolean>)

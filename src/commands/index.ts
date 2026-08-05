@@ -1,4 +1,3 @@
-import { logs } from "./logs";
 import { uptime } from "./uptime";
 import { clearChat } from "./clearChat";
 import { posting } from "./posting";
@@ -13,7 +12,6 @@ import { fortuneSearch } from "./fortuneSearch";
 import { Command } from "../types";
 
 export const commands: Command[] = [
-  logs,
   uptime,
   clearChat,
   posting,

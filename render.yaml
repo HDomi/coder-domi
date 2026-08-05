@@ -3,8 +3,8 @@ services:
     name: coder-domi
     runtime: node
     plan: free
-    buildCommand: npm install --include=dev && npm run build
-    startCommand: npm start
+    buildCommand: pnpm install --frozen-lockfile && pnpm run build
+    startCommand: pnpm start
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION

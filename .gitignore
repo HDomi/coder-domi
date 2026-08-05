@@ -5,3 +5,4 @@ node_modules
 dist/
 firebase-key.json
 chatops.db
+.pnpm-store

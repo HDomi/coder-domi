@@ -7,8 +7,8 @@
 2. **New + → Web Service** (또는 Blueprint로 `render.yaml` 사용)
 3. 이 레포지토리 연결
 4. 설정 확인
-   - **Build Command:** `npm install --include=dev && npm run build`
-   - **Start Command:** `npm start`
+   - **Build Command:** `pnpm install --frozen-lockfile && pnpm run build`
+   - **Start Command:** `pnpm start`
    - **Health Check Path:** `/health`
 5. Environment Variables 입력
    - `DISCORD_TOKEN`

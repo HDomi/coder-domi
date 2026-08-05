@@ -43,7 +43,9 @@ const defaultPath = path.resolve(__dirname, "../firebase-key.json");
 
 if (envJson) {
   try {
-    serviceAccount = JSON.parse(envJson);
+    serviceAccount = JSON.parse(
+      Buffer.from(envJson, 'base64').toString('utf-8')
+    );
   } catch (e: any) {
     console.error("❌ FIREBASE_SERVICE_ACCOUNT_JSON 파싱 실패:", e.message);
   }

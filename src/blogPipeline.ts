@@ -1,7 +1,12 @@
 import { Client, EmbedBuilder, TextChannel } from "discord.js";
 import { firebaseClient, BlogPost } from "./firebase";
 import { randomUUID } from "crypto";
-import { AI_CONFIG, BlogGenre, resolveGenreForToday } from "./config";
+import {
+  AI_CONFIG,
+  BlogGenre,
+  resolveGenreForToday,
+  SOURCELESS_FALLBACK_GENRE,
+} from "./config";
 import { GoogleGenAI, Type } from "@google/genai";
 import { triggerBlogDeploy } from "./git";
 import { BLOG_CONFIG } from "./blogConfig";
@@ -22,6 +27,23 @@ const FALLBACK_THEMES: Record<BlogGenre, string> = {
   devlog: "정적 배포 환경에서 경로가 어긋났을 때 원인을 좁혀 간 과정",
   guide: "GitHub Pages에 정적 사이트를 올릴 때 자산 경로가 깨지는 문제 해결하기",
 };
+
+/**
+ * 저장소 소재를 얻지 못했을 때 guide 장르에 넣는 대체 소재 블록.
+ * 특정 저장소를 언급하지 않고, 다룰 수 있는 기술 범위만 알려 준다.
+ */
+const GENERIC_SOURCE_BLOCK = `[소재 없음]
+이번 글은 특정 저장소를 소재로 삼지 않는다. 저장소 이름이나 개인 프로젝트를 언급하지 마라.
+아래 기술 범위 안에서, 개발자가 실제로 검색할 법한 문제 하나를 골라 다뤄라.
+
+[다룰 수 있는 범위]
+TypeScript, JavaScript, Node.js, React, Next.js, 브라우저 API(Canvas·Video·File·Web Worker·WASM),
+정적 사이트 배포(GitHub Pages·GitHub Actions), Firebase Realtime Database, IndexedDB,
+Discord 봇 개발, REST API 설계, 크론/스케줄러
+
+[주의]
+근거 없이 단정할 수 있는 주제(버전별 성능 비교, 벤치마크 수치)는 피하고,
+재현 가능한 문제 해결 절차를 다뤄라.`;
 
 /**
  * 최근 devlog/guide 글이 어떤 저장소를 다뤘는지 추출합니다.
@@ -325,8 +347,9 @@ export async function runBlogPostingPipeline(
     if (onProgress) await onProgress(`1단계 완료: 과거 포스팅 ${pastPosts.length}개 로드 완료`);
 
     // 1.5 장르 확정 및 집필 소재 수집
-    // 수동 지정이 없으면 요일 배정을 따르고, 휴재일에 수동 실행된 경우 에세이로 처리한다.
-    let genre: BlogGenre = requestedGenre ?? resolveGenreForToday() ?? "essay";
+    // 수동 지정이 없으면 요일 배정을 따른다. 휴재일에 수동 실행된 경우에도 기술 장르를 기본값으로 삼아,
+    // 에세이는 `/포스팅 장르:에세이`로 명시했을 때만 작성되도록 한다.
+    let genre: BlogGenre = requestedGenre ?? resolveGenreForToday() ?? SOURCELESS_FALLBACK_GENRE;
     let repoSource: RepoSource | null = null;
 
     if (genre === "devlog" || genre === "guide") {
@@ -338,14 +361,21 @@ export async function runBlogPostingPipeline(
         console.error(`⚠️ 소재 수집 중 오류: ${e.message}`);
       }
 
-      // 소재를 얻지 못하면 자동 포스팅이 멈추지 않도록 에세이로 폴백한다.
-      if (!repoSource) {
+      // 소재를 얻지 못해도 에세이로 떨어뜨리지 않는다.
+      // devlog는 실제 소재가 없으면 성립하지 않으므로 guide로 전환하고,
+      // guide는 저장소 없이 일반 기술 주제로 작성해 자동 포스팅을 이어 간다.
+      if (!repoSource && genre === "devlog") {
         console.warn(
-          `⚠️ ${GENRE_LABELS[genre]} 소재 수집에 실패하여 에세이 장르로 대체합니다.`,
+          `⚠️ 개발기 소재 수집에 실패하여 ${GENRE_LABELS[SOURCELESS_FALLBACK_GENRE]} 장르로 전환합니다.`,
         );
         if (onProgress)
-          await onProgress("⚠️ 소재 수집 실패 → 에세이 장르로 대체하여 계속 진행합니다.");
-        genre = "essay";
+          await onProgress(
+            `⚠️ 소재 수집 실패 → ${GENRE_LABELS[SOURCELESS_FALLBACK_GENRE]} 장르로 전환하여 계속 진행합니다.`,
+          );
+        genre = SOURCELESS_FALLBACK_GENRE;
+      } else if (!repoSource) {
+        console.warn("⚠️ 저장소 소재 없이 일반 기술 주제로 작성합니다.");
+        if (onProgress) await onProgress("⚠️ 소재 수집 실패 → 일반 기술 주제로 작성합니다.");
       }
     }
 
@@ -354,7 +384,12 @@ export async function runBlogPostingPipeline(
         ? { themePitching: BLOG_CONFIG.themePitching, articleWriting: BLOG_CONFIG.articleWriting }
         : BLOG_CONFIG[genre];
 
-    const sourceBlock = repoSource ? formatSourceBlock(repoSource) : "";
+    // guide는 소재가 없어도 작성할 수 있도록 대체 블록을 넣는다.
+    const sourceBlock = repoSource
+      ? formatSourceBlock(repoSource)
+      : genre === "essay"
+        ? ""
+        : GENERIC_SOURCE_BLOCK;
     console.log(
       `🎨 [장르] 이번 글 장르: ${GENRE_LABELS[genre]}` +
         (repoSource ? ` (소재 저장소: ${repoSource.fullName})` : ""),

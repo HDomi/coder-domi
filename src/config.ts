@@ -75,11 +75,13 @@ export const DEVLOG_CONFIG = {
  * 요일별 장르 배정 프리셋. 0=일요일 ~ 6=토요일.
  * null은 휴재(자동 포스팅 없음)를 뜻한다.
  *
- * approval: 애드센스 심사 통과가 목표인 기간용. 정보성·경험 기반 글 비중을 높인다.
- * balanced: 승인 이후 복귀용. 에세이 정체성을 유지하면서 기술 글을 섞는다.
+ * technical: 자동 포스팅을 기술 문서(devlog/guide)로만 채운다. 에세이는 배정하지 않는다.
+ * balanced: 에세이를 다시 섞고 싶을 때 쓰는 예비 프리셋.
+ *
+ * 에세이는 자동 포스팅 대상에서 제외되어 있고, `/포스팅 장르:에세이`로 수동 작성만 가능하다.
  */
 export const GENRE_SCHEDULE_PRESETS: Record<string, (BlogGenre | null)[]> = {
-  approval: [null, "guide", "devlog", "guide", "devlog", "essay", null],
+  technical: [null, "guide", "devlog", "guide", "devlog", "guide", null],
   balanced: [null, "guide", "devlog", "essay", "devlog", "essay", null],
 };
 
@@ -87,9 +89,22 @@ export type BlogGenre = "essay" | "devlog" | "guide";
 
 /**
  * 현재 사용할 프리셋 이름.
- * 애드센스 승인이 나면 "balanced"로 바꾸면 된다. 다른 코드는 손대지 않아도 된다.
+ * 에세이를 자동 포스팅에 다시 넣고 싶으면 "balanced"로 바꾸면 된다.
  */
-export const ACTIVE_GENRE_PRESET: keyof typeof GENRE_SCHEDULE_PRESETS = "approval";
+export const ACTIVE_GENRE_PRESET: keyof typeof GENRE_SCHEDULE_PRESETS = "technical";
+
+/**
+ * 자동 포스팅에서 제외할 장르.
+ * 여기 포함된 장르는 요일 배정과 폴백 어디에서도 선택되지 않는다.
+ */
+export const AUTO_POSTING_EXCLUDED_GENRES: BlogGenre[] = ["essay"];
+
+/**
+ * 소재 수집에 실패했을 때 대신 쓸 장르.
+ * devlog는 실제 저장소 소재가 없으면 성립하지 않으므로 guide로 넘긴다.
+ * guide는 특정 저장소 없이도 일반 기술 주제로 작성할 수 있다.
+ */
+export const SOURCELESS_FALLBACK_GENRE: BlogGenre = "guide";
 
 /**
  * KST 기준 요일에 배정된 장르를 반환합니다.
@@ -103,8 +118,14 @@ export function resolveGenreForToday(now: Date = new Date()): BlogGenre | null {
   }).format(now);
 
   const index = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(weekdayShort);
-  if (index === -1) return "essay";
+  if (index === -1) return SOURCELESS_FALLBACK_GENRE;
 
   const schedule = GENRE_SCHEDULE_PRESETS[ACTIVE_GENRE_PRESET];
-  return schedule[index] ?? null;
+  const genre = schedule[index] ?? null;
+
+  // 프리셋에 실수로 제외 장르가 들어가도 자동 포스팅에는 나가지 않게 막는다.
+  if (genre && AUTO_POSTING_EXCLUDED_GENRES.includes(genre)) {
+    return SOURCELESS_FALLBACK_GENRE;
+  }
+  return genre;
 }

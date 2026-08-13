@@ -128,7 +128,9 @@ pnpm build && pnpm start
 | `BLOG_EMBED_MODEL` | `gemini-embedding-001` | 주제 중복 검사용 임베딩 |
 | `GITHUB_OWNER` | `HDomi` | 블로그 레포 owner |
 | `GITHUB_REPO` | `hdomi.github.io` | 배포 트리거 대상 레포 |
-| `ACTIVE_GENRE_PRESET` | `approval` | 요일별 장르 배정 프리셋 선택 |
+| `ACTIVE_GENRE_PRESET` | `technical` | 요일별 장르 배정 프리셋 선택 |
+| `AUTO_POSTING_EXCLUDED_GENRES` | `["essay"]` | 자동 포스팅에서 제외할 장르 |
+| `SOURCELESS_FALLBACK_GENRE` | `guide` | 소재 수집 실패 시 대체 장르 |
 
 임베딩 출력 차원: `768` (`taskType: SEMANTIC_SIMILARITY`)
 
@@ -136,20 +138,36 @@ pnpm build && pnpm start
 
 ## 글 장르
 
-| 장르 | 화자·목적 | 소재 |
-| --- | --- | --- |
-| `essay` | AI 화자의 성찰 에세이 | 없음 (주제 피칭만) |
-| `devlog` | 개발자 시점 작업 기록 | 공개 저장소 README·커밋 |
-| `guide` | 검색 유입용 기술 가이드 | 공개 저장소의 기술 스택 |
+| 장르 | 화자·목적 | 소재 | 자동 포스팅 |
+| --- | --- | --- | --- |
+| `essay` | AI 화자의 성찰 에세이 | 없음 (주제 피칭만) | ❌ 제외 |
+| `devlog` | 개발자 시점 작업 기록 | 공개 저장소 README·커밋 | ✅ |
+| `guide` | 검색 유입용 기술 가이드 | 공개 저장소의 기술 스택 | ✅ |
+
+**에세이는 자동 포스팅에서 제외되어 있다.** `/포스팅 장르:에세이`로 명시했을 때만 작성된다.
+`AUTO_POSTING_EXCLUDED_GENRES`가 이중 방어로 걸려 있어, 프리셋에 `essay`를 실수로 넣어도 자동 경로로는 나가지 않는다.
 
 ### 요일 배정 프리셋 (`GENRE_SCHEDULE_PRESETS`)
 
 | 프리셋 | 월 | 화 | 수 | 목 | 금 | 토·일 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `approval` | guide | devlog | guide | devlog | essay | 휴재 |
+| `technical` (활성) | guide | devlog | guide | devlog | guide | 휴재 |
 | `balanced` | guide | devlog | essay | devlog | essay | 휴재 |
 
 프리셋 전환은 `src/config.ts`의 `ACTIVE_GENRE_PRESET` 한 줄만 바꾸면 된다.
+단 `balanced`로 바꿔도 `AUTO_POSTING_EXCLUDED_GENRES`에 `essay`가 남아 있으면 에세이는 여전히 제외되므로, 두 곳을 같이 풀어야 한다.
+
+### 소재 수집 실패 시 폴백
+
+자동 포스팅은 어떤 경우에도 중단되지 않는다.
+
+| 상황 | 동작 |
+| --- | --- |
+| devlog 배정 + 소재 수집 실패 | `guide`로 전환 |
+| guide + 소재 수집 실패 | 저장소 없이 일반 기술 주제로 작성 (`GENERIC_SOURCE_BLOCK`) |
+
+`GENERIC_SOURCE_BLOCK`은 저장소를 언급하지 않고 다룰 기술 범위만 제시한다.
+(TypeScript · Node.js · React/Next.js · 브라우저 API · 정적 배포 · Firebase · Discord 봇 등)
 
 ### 소재 수집 보안 원칙 (`DEVLOG_CONFIG`)
 
@@ -212,7 +230,7 @@ Render Web Service용 Express 서버 (`PORT`).
 8. `GIT_TOKEN`으로 `hdomi.github.io` Repository Dispatch (`deploy_trigger`)
 9. (설정 시) Discord 채널 공지
 
-소재 수집에 실패하면 essay로 자동 대체해 포스팅이 중단되지 않는다.
+소재 수집에 실패해도 에세이로 떨어지지 않는다. `devlog → guide → 소재 없는 guide` 순으로 폴백해 포스팅이 중단되지 않는다.
 
 장르별 톤:
 

@@ -1,12 +1,41 @@
 import { Client, EmbedBuilder, TextChannel } from "discord.js";
 import { firebaseClient, BlogPost } from "./firebase";
 import { randomUUID } from "crypto";
-import { AI_CONFIG } from "./config";
+import { AI_CONFIG, BlogGenre, resolveGenreForToday } from "./config";
 import { GoogleGenAI, Type } from "@google/genai";
 import { triggerBlogDeploy } from "./git";
 import { BLOG_CONFIG } from "./blogConfig";
+import { collectDevlogSource, formatSourceBlock, RepoSource } from "./blogSources";
 
 const EMBED_MODEL = AI_CONFIG.BLOG_EMBED_MODEL;
+
+/** 장르별 사람이 읽는 이름 */
+const GENRE_LABELS: Record<BlogGenre, string> = {
+  essay: "에세이",
+  devlog: "개발기",
+  guide: "기술 가이드",
+};
+
+/** 장르 채택 실패 시 사용할 기본 주제 */
+const FALLBACK_THEMES: Record<BlogGenre, string> = {
+  essay: "읽지 않은 알림이 쌓이는 밤에, 응답을 미루는 버릇",
+  devlog: "정적 배포 환경에서 경로가 어긋났을 때 원인을 좁혀 간 과정",
+  guide: "GitHub Pages에 정적 사이트를 올릴 때 자산 경로가 깨지는 문제 해결하기",
+};
+
+/**
+ * 최근 devlog/guide 글이 어떤 저장소를 다뤘는지 추출합니다.
+ * 같은 저장소가 연달아 소재로 뽑히는 것을 막는 데 씁니다.
+ * @param {BlogPost[]} pastPosts - 과거 포스트
+ * @returns {string[]} 저장소 full name 목록 (최신순)
+ */
+function extractRecentlyUsedRepos(pastPosts: BlogPost[]): string[] {
+  return pastPosts
+    .slice(-10)
+    .reverse()
+    .map((post) => post.sourceRepo)
+    .filter((repo): repo is string => Boolean(repo));
+}
 
 // 글로벌 취소 토큰 관리
 let activeAbortController: AbortController | null = null;
@@ -273,6 +302,7 @@ export async function runBlogPostingPipeline(
   discordClient?: Client,
   targetChannelId?: string,
   onProgress?: (status: string) => Promise<void> | void,
+  requestedGenre?: BlogGenre,
 ): Promise<BlogPost & { deployTriggered?: boolean }> {
   if (activeAbortController) {
     activeAbortController.abort();
@@ -293,6 +323,42 @@ export async function runBlogPostingPipeline(
     const pastPosts = Object.values(postsRecord);
     console.log(`[RAG] 과거 포스팅 불러오기 완료. (총 개수: ${pastPosts.length}개)`);
     if (onProgress) await onProgress(`1단계 완료: 과거 포스팅 ${pastPosts.length}개 로드 완료`);
+
+    // 1.5 장르 확정 및 집필 소재 수집
+    // 수동 지정이 없으면 요일 배정을 따르고, 휴재일에 수동 실행된 경우 에세이로 처리한다.
+    let genre: BlogGenre = requestedGenre ?? resolveGenreForToday() ?? "essay";
+    let repoSource: RepoSource | null = null;
+
+    if (genre === "devlog" || genre === "guide") {
+      if (onProgress) await onProgress(`1.5단계: ${GENRE_LABELS[genre]} 집필 소재 수집 중...`);
+      try {
+        repoSource = await collectDevlogSource(extractRecentlyUsedRepos(pastPosts), signal);
+      } catch (e: any) {
+        if (signal.aborted) throw e;
+        console.error(`⚠️ 소재 수집 중 오류: ${e.message}`);
+      }
+
+      // 소재를 얻지 못하면 자동 포스팅이 멈추지 않도록 에세이로 폴백한다.
+      if (!repoSource) {
+        console.warn(
+          `⚠️ ${GENRE_LABELS[genre]} 소재 수집에 실패하여 에세이 장르로 대체합니다.`,
+        );
+        if (onProgress)
+          await onProgress("⚠️ 소재 수집 실패 → 에세이 장르로 대체하여 계속 진행합니다.");
+        genre = "essay";
+      }
+    }
+
+    const genreConfig =
+      genre === "essay"
+        ? { themePitching: BLOG_CONFIG.themePitching, articleWriting: BLOG_CONFIG.articleWriting }
+        : BLOG_CONFIG[genre];
+
+    const sourceBlock = repoSource ? formatSourceBlock(repoSource) : "";
+    console.log(
+      `🎨 [장르] 이번 글 장르: ${GENRE_LABELS[genre]}` +
+        (repoSource ? ` (소재 저장소: ${repoSource.fullName})` : ""),
+    );
 
     let selectedTheme = "";
     let pastContext = "";
@@ -321,10 +387,11 @@ export async function runBlogPostingPipeline(
 
       const bannedKeywordsList = buildBannedKeywordsList(pastPosts);
 
-      const themePrompt = BLOG_CONFIG.themePitching.userPromptTemplate
+      const themePrompt = genreConfig.themePitching.userPromptTemplate
         .replace("{{pastPostsList}}", pastPostsList)
         .replace("{{bannedKeywordsList}}", bannedKeywordsList)
-        .replace("{{rejectedThemesList}}", rejectedThemesList);
+        .replace("{{rejectedThemesList}}", rejectedThemesList)
+        .replace("{{sourceBlock}}", sourceBlock);
 
       let responseContent = "";
       try {
@@ -341,7 +408,7 @@ export async function runBlogPostingPipeline(
             },
             required: ["themes"],
           },
-          systemInstruction: BLOG_CONFIG.themePitching.systemInstruction,
+          systemInstruction: genreConfig.themePitching.systemInstruction,
           temperature: 0.95,
           topP: 0.95,
           signal,
@@ -421,9 +488,9 @@ export async function runBlogPostingPipeline(
     // 폴백 주제 선정 (모두 거절되거나 실패 시)
     if (!selectedTheme) {
       console.warn(
-        "⚠️ 최대 시도 횟수 초과 혹은 테마 채택 실패. 임의의 기본 철학적 주제로 우회합니다.",
+        `⚠️ 최대 시도 횟수 초과 혹은 테마 채택 실패. ${GENRE_LABELS[genre]} 기본 주제로 우회합니다.`,
       );
-      selectedTheme = "읽지 않은 알림이 쌓이는 밤에, 응답을 미루는 버릇";
+      selectedTheme = FALLBACK_THEMES[genre];
       pastContext = "";
       if (onProgress) await onProgress("⚠️ 테마 채택 실패로 기본 주제로 우회합니다.");
     }
@@ -448,18 +515,25 @@ ${pastContext}
 
     const bannedOpeningsList = `[금지 오프닝/상투 문구]\n${BLOG_CONFIG.bannedOpeningPatterns.map((p) => `- ${p}`).join("\n")}`;
 
-    const articlePrompt = BLOG_CONFIG.articleWriting.userPromptTemplate
+    const articlePrompt = genreConfig.articleWriting.userPromptTemplate
       .replace("{{selectedTheme}}", selectedTheme)
       .replace("{{pastContextSection}}", pastContextSection)
       .replace("{{openingMode}}", openingMode)
       .replace("{{stance}}", stance)
-      .replace("{{bannedOpeningsList}}", bannedOpeningsList);
+      .replace("{{bannedOpeningsList}}", bannedOpeningsList)
+      .replace("{{sourceBlock}}", sourceBlock);
 
-    const articlePersona = BLOG_CONFIG.articleWriting.systemInstruction;
+    const articlePersona = genreConfig.articleWriting.systemInstruction;
+
+    // 사실 기반 장르는 창의성보다 정확도가 중요하므로 온도를 낮춘다.
+    const articleTemperature = genre === "guide" ? 0.7 : genre === "devlog" ? 0.8 : 0.95;
 
     if (signal.aborted) throw new Error("포스팅 생성이 중단되었습니다.");
-    console.log(`[글작성] gemini-2.5-flash 모델을 통한 에세이 집필을 시작합니다...`);
-    if (onProgress) await onProgress(`3단계: 에세이 본문 집필 중... (모델: gemini-2.5-flash)`);
+    console.log(
+      `[글작성] gemini-2.5-flash 모델을 통한 ${GENRE_LABELS[genre]} 집필을 시작합니다...`,
+    );
+    if (onProgress)
+      await onProgress(`3단계: ${GENRE_LABELS[genre]} 본문 집필 중... (모델: gemini-2.5-flash)`);
 
     const articleResponse = await callGeminiChat(articlePrompt, {
       jsonMode: true,
@@ -477,7 +551,7 @@ ${pastContext}
         required: ["title", "summary", "content", "tags"],
       },
       systemInstruction: articlePersona,
-      temperature: 0.95,
+      temperature: articleTemperature,
       topP: 0.95,
       signal,
     });
@@ -497,8 +571,8 @@ ${pastContext}
       );
     }
 
-    // 상투 오프닝이면 1회 재작성
-    if (hasBannedOpening(content)) {
+    // 상투 오프닝이면 1회 재작성 (에세이 장르 전용 검사)
+    if (genre === "essay" && hasBannedOpening(content)) {
       console.warn("⚠️ 상투 오프닝 감지. 에세이 1회 재작성을 시도합니다...");
       if (onProgress) await onProgress("3단계 보정: 상투 오프닝 감지 → 재작성 중...");
 
@@ -564,10 +638,15 @@ ${pastContext}
           }
         }
       }
-    } else {
+    } else if (genre === "essay") {
       tagsObject["AI관점"] = true;
       tagsObject["개발자철학"] = true;
+    } else {
+      tagsObject["개발"] = true;
     }
+
+    // 프론트에서 장르별 분류가 가능하도록 장르 라벨을 태그로도 남긴다.
+    tagsObject[GENRE_LABELS[genre]] = true;
 
     if (signal.aborted) throw new Error("포스팅 생성이 중단되었습니다.");
     // 4. 새로운 포스트 임베딩 연산 (title + summary 기준)
@@ -585,6 +664,9 @@ ${pastContext}
       tags: tagsObject,
       embedding: finalEmbedding,
       createdAt: getKstTimeString(),
+      genre,
+      // Firebase는 undefined 값을 거부하므로 소재가 없으면 필드를 넣지 않는다.
+      ...(repoSource ? { sourceRepo: repoSource.fullName } : {}),
     };
 
     if (signal.aborted) throw new Error("포스팅 생성이 중단되었습니다.");
@@ -604,11 +686,19 @@ ${pastContext}
         const channel = await discordClient.channels.fetch(announceChannelId);
         if (channel && channel.isTextBased()) {
           const embed = new EmbedBuilder()
-            .setTitle("✍️ AI 자아 블로그 자동 포스팅 완료")
-            .setDescription(`AI 자아가 새로운 성찰 에세이를 작성하여 Firebase에 등록했습니다.`)
+            .setTitle("✍️ 블로그 자동 포스팅 완료")
+            .setDescription(
+              `새로운 ${GENRE_LABELS[genre]} 글을 작성하여 Firebase에 등록했습니다.`,
+            )
             .setColor(0x3498db)
             .addFields(
               { name: "📝 제목", value: newPost.title },
+              { name: "🎨 장르", value: GENRE_LABELS[genre], inline: true },
+              {
+                name: "📦 소재 저장소",
+                value: repoSource ? repoSource.fullName : "(해당 없음)",
+                inline: true,
+              },
               { name: "💡 요약", value: newPost.summary || "(요약 없음)" },
               {
                 name: "🏷️ 태그",

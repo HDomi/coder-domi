@@ -14,6 +14,10 @@ export interface BlogPost {
   tags: Record<string, boolean>;
   embedding: number[];
   createdAt: string;
+  /** 글 장르. 장르 도입 이전에 작성된 글에는 없다. */
+  genre?: "essay" | "devlog" | "guide";
+  /** devlog/guide 작성 시 소재로 사용한 공개 저장소 (owner/repo) */
+  sourceRepo?: string;
 }
 
 export interface FortuneUserInfo {

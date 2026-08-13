@@ -1,12 +1,26 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import { Command } from "../types";
 import { runBlogPostingPipeline } from "../blogPipeline";
+import { BlogGenre } from "../config";
 
 export const posting: Command = {
   data: new SlashCommandBuilder()
     .setName("포스팅")
-    .setDescription("즉시 AI 블로그 포스팅을 생성하고 Firebase에 업로드합니다."),
+    .setDescription("즉시 AI 블로그 포스팅을 생성하고 Firebase에 업로드합니다.")
+    .addStringOption((option) =>
+      option
+        .setName("장르")
+        .setDescription("생략하면 오늘 요일에 배정된 장르로 작성합니다.")
+        .setRequired(false)
+        .addChoices(
+          { name: "에세이", value: "essay" },
+          { name: "개발기", value: "devlog" },
+          { name: "기술 가이드", value: "guide" },
+        ),
+    ),
   async execute(interaction: ChatInputCommandInteraction) {
+    const requestedGenre = (interaction.options.getString("장르") as BlogGenre | null) ?? undefined;
+
     // LLM 추론 및 임베딩 연산에 2~4분이 소요되므로 interaction 타임아웃을 막기 위해 deferReply 적용
     await interaction.deferReply();
 
@@ -61,17 +75,34 @@ export const posting: Command = {
         async (statusMsg) => {
           await updateProgressEmbed(statusMsg);
         },
+        requestedGenre,
       );
 
       clearInterval(timer);
 
       const totalTime = Date.now() - startTime;
+      const genreLabels: Record<string, string> = {
+        essay: "에세이",
+        devlog: "개발기",
+        guide: "기술 가이드",
+      };
+
       const embed = new EmbedBuilder()
-        .setTitle("✅ AI 블로그 수동 포스팅 완료")
-        .setDescription(`성공적으로 새로운 에세이를 작성하고 Firebase RTDB에 등록했습니다.`)
+        .setTitle("✅ 블로그 수동 포스팅 완료")
+        .setDescription(`성공적으로 새로운 글을 작성하고 Firebase RTDB에 등록했습니다.`)
         .setColor(0x2ecc71)
         .addFields(
           { name: "📝 제목", value: post.title },
+          {
+            name: "🎨 장르",
+            value: genreLabels[post.genre || "essay"] || "에세이",
+            inline: true,
+          },
+          {
+            name: "📦 소재 저장소",
+            value: post.sourceRepo || "(해당 없음)",
+            inline: true,
+          },
           { name: "💡 요약", value: post.summary || "(요약 없음)" },
           { name: "🏷️ 태그", value: Object.keys(post.tags).join(", ") || "(태그 없음)" },
           { name: "🆔 UUID", value: `\`${post.uuid}\``, inline: true },

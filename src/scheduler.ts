@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { Client } from "discord.js";
 import { firebaseClient } from "./firebase";
 import { runBlogPostingPipeline } from "./blogPipeline";
+import { resolveGenreForToday } from "./config";
 import { runWeeklyFortunePipeline, getCurrentWeekDaysKst } from "./fortune/pipeline";
 
 export async function initScheduler(client: Client) {
@@ -36,8 +37,13 @@ export async function initScheduler(client: Client) {
         `🔍 [스케줄러] 시작 시점 검사: 활성화 상태. 현재 KST 시각: ${hour}시. 오늘 날짜: ${dateStr}`,
       );
 
+      // 휴재일(주말)에는 누락 보정을 하지 않는다.
+      const todayGenre = resolveGenreForToday();
+
       // 현재 시간이 오후 2시(14시) 이후인 경우에만 당일 자동 포스팅 실행 여부를 체크하여 누락분 보정
-      if (hour >= 14) {
+      if (!todayGenre) {
+        console.log(`ℹ️ [스케줄러] 오늘(${dateStr})은 휴재일이므로 자동 포스팅을 건너뜁니다.`);
+      } else if (hour >= 14) {
         const lastAutoPostDate = await firebaseClient.getLastAutoPostingDate();
 
         if (lastAutoPostDate !== dateStr) {
@@ -71,10 +77,11 @@ export async function initScheduler(client: Client) {
     console.error("❌ [스케줄러] 시작 시점 자가 복구 검사 실패:", error);
   }
 
-  // 2. 매일 오후 2시 정각(14:00)에 실행하는 크론 스케줄링 등록
+  // 2. 평일(월~금) 오후 2시 정각(14:00)에 실행하는 크론 스케줄링 등록
+  // 주말 휴재는 발행 빈도를 낮춰 대량 자동 생성으로 보이지 않게 하려는 의도적 설정이다.
   // 타임존을 Asia/Seoul로 명시하여 로컬 서버 타임존 영향 배제
   cron.schedule(
-    "0 14 * * *",
+    "0 14 * * 1-5",
     async () => {
       console.log("🔔 [스케줄러] 오후 2시 자동 포스팅 검사를 실행합니다...");
 
@@ -84,6 +91,13 @@ export async function initScheduler(client: Client) {
           console.log(
             "ℹ️ [스케줄러] 자동 포스팅 스케줄러 상태가 '비활성화(false)' 상태이므로 생성을 건너뜁니다.",
           );
+          return;
+        }
+
+        // 크론이 평일만 돌지만, 프리셋에서 특정 요일을 휴재로 바꿀 수 있으므로 한 번 더 확인한다.
+        const todayGenre = resolveGenreForToday();
+        if (!todayGenre) {
+          console.log("ℹ️ [스케줄러] 오늘은 장르 배정이 없는 휴재일이므로 생성을 건너뜁니다.");
           return;
         }
 
